@@ -172,21 +172,36 @@ async def _sheet_formulas(wb: openpyxl.Workbook) -> int:
     return len(formulas)
 
 
-# ─── Публичная функция ────────────────────────────────────────────────────────
+# ─── Публичные функции ───────────────────────────────────────────────────────
 
-async def build_excel() -> tuple[bytes, str]:
-    """
-    Строит Excel-файл и возвращает (bytes, имя_файла).
-    Вызывается из admin_panel.py.
-    """
+async def build_excel_full() -> tuple[bytes, str]:
+    """Два листа: Клиенты + Формулы."""
     wb = openpyxl.Workbook()
-
     await _sheet_clients(wb)
     await _sheet_formulas(wb)
+    return _save(wb, "lumln_full")
 
+
+async def build_excel_clients() -> tuple[bytes, str]:
+    """Один лист: только Клиенты."""
+    wb = openpyxl.Workbook()
+    await _sheet_clients(wb)
+    return _save(wb, "lumln_clients")
+
+
+async def build_excel_formulas() -> tuple[bytes, str]:
+    """Один лист: только Формулы."""
+    wb = openpyxl.Workbook()
+    # openpyxl создаёт пустой Sheet по умолчанию — переименуем его под формулы
+    wb.active.title = "_tmp"
+    await _sheet_formulas(wb)
+    del wb["_tmp"]
+    return _save(wb, "lumln_formulas")
+
+
+def _save(wb: openpyxl.Workbook, prefix: str) -> tuple[bytes, str]:
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-
-    filename = f"lumln_clients_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return buf.read(), filename

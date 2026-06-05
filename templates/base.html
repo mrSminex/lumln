@@ -48,6 +48,10 @@
   .stat-num { font-size: 2rem; font-weight: 700; color: #2d2d2d; }
   .stat-label { font-size: .8rem; color: #888; margin-top: .2rem; }
   .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .nav-export { background: #e8f5e9 !important; color: #2e7d32 !important; font-weight: 600; }
+  .nav-export:hover { background: #c8e6c9 !important; }
+  .nav-export--full { background: #e3f2fd !important; color: #1565c0 !important; }
+  .nav-export--full:hover { background: #bbdefb !important; }
 </style>
 </head>
 <body>
@@ -61,7 +65,9 @@
   <a href="/formulas" {% if active == 'formulas' %}class="active"{% endif %}>Формулы</a>
   <a href="/broadcast" {% if active == 'broadcast' %}class="active"{% endif %}>Рассылка</a>
   <a href="/backup" {% if active == 'backup' %}class="active"{% endif %}>Бэкапы</a>
-  <a href="/export/excel" style="background:#e8f5e9;color:#2e7d32" title="Скачать всю базу в Excel">⬇ Excel</a>
+  <a href="/export/clients"  class="nav-export" title="Скачать список клиентов (Excel)">⬇ Клиенты</a>
+  <a href="/export/formulas" class="nav-export" title="Скачать все формулы (Excel)">⬇ Формулы</a>
+  <a href="/export/full"     class="nav-export nav-export--full" title="Клиенты + Формулы одним файлом">⬇ Всё</a>
   <a href="/logout">Выйти</a>
 </nav>
 <main>

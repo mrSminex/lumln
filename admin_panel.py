@@ -261,19 +261,42 @@ async def broadcast_send(request: Request, message: str = Form(...)):
 
 # ─── Экспорт в Excel ──────────────────────────────────────────────────────────
 
-@app.get("/export/excel")
-async def export_excel(request: Request):
-    if not is_auth(request):
-        return redirect_login()
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-    from excel_export import build_excel
-    data, filename = await build_excel()
 
+def _xlsx_response(data: bytes, filename: str) -> StreamingResponse:
     return StreamingResponse(
         io.BytesIO(data),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        media_type=XLSX_MIME,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.get("/export/full")
+async def export_full(request: Request):
+    """Клиенты + Формулы — два листа в одном файле."""
+    if not is_auth(request):
+        return redirect_login()
+    from excel_export import build_excel_full
+    return _xlsx_response(*await build_excel_full())
+
+
+@app.get("/export/clients")
+async def export_clients(request: Request):
+    """Только клиенты."""
+    if not is_auth(request):
+        return redirect_login()
+    from excel_export import build_excel_clients
+    return _xlsx_response(*await build_excel_clients())
+
+
+@app.get("/export/formulas")
+async def export_formulas(request: Request):
+    """Только формулы."""
+    if not is_auth(request):
+        return redirect_login()
+    from excel_export import build_excel_formulas
+    return _xlsx_response(*await build_excel_formulas())
 
 
 # ─── Бэкапы ───────────────────────────────────────────────────────────────────
