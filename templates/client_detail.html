@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem">
+  <a href="/clients" style="color:#888;text-decoration:none;font-size:.9rem">← Все клиенты</a>
+</div>
+
+<div class="card" style="margin-bottom:1.5rem">
+  <h2 style="margin-bottom:1rem">{{ client.name }}</h2>
+  <table style="width:auto">
+    <tr><td style="color:#888;padding:.3rem .8rem .3rem 0">ID клиента</td><td><strong>#{{ client.id }}</strong></td></tr>
+    <tr><td style="color:#888;padding:.3rem .8rem .3rem 0">Телефон</td><td>{{ client.phone }}</td></tr>
+    <tr><td style="color:#888;padding:.3rem .8rem .3rem 0">Telegram ID</td><td>{{ client.telegram_id }}</td></tr>
+    <tr><td style="color:#888;padding:.3rem .8rem .3rem 0">Дата регистрации</td><td>{{ client.created_at[:16] }}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <h2>Формулы ({{ formulas|length }})</h2>
+  </div>
+
+  {% if msg %}
+  <div class="alert alert-success" style="margin-bottom:1rem">{{ msg }}</div>
+  {% endif %}
+
+  <!-- Форма добавления формулы -->
+  <details style="margin-bottom:1.5rem">
+    <summary style="cursor:pointer;font-weight:600;padding:.5rem 0;color:#2d2d2d">
+      ➕ Добавить новую формулу
+    </summary>
+    <form method="post" action="/clients/{{ client.id }}/formula" style="margin-top:1rem">
+      <div class="form-group">
+        <label>Название формулы</label>
+        <input type="text" name="title" placeholder="Например: Сессия 14.06.2025 — Летний вечер" required>
+      </div>
+      <div class="form-group">
+        <label>Состав</label>
+        <textarea name="content" placeholder="Бергамот — 30%&#10;Жасмин — 25%&#10;Сандал — 20%&#10;Мускус — 15%&#10;Ваниль — 10%" required></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">Сохранить формулу</button>
+    </form>
+  </details>
+
+  {% if formulas %}
+    {% for f in formulas %}
+    <div style="border:1px solid #f0ede8;border-radius:8px;padding:1rem;margin-bottom:.8rem">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem">
+        <div>
+          <strong>{{ f.title }}</strong>
+          <div style="font-size:.8rem;color:#888;margin-top:.2rem">
+            Добавлена: {{ f.created_at[:16] }}
+            {% if f.created_by %} · {{ f.created_by }}{% endif %}
+          </div>
+        </div>
+        <form method="post" action="/formulas/{{ f.id }}/delete"
+              onsubmit="return confirm('Удалить формулу?')">
+          <button class="btn btn-danger btn-sm" type="submit">Удалить</button>
+        </form>
+      </div>
+      <pre style="background:#faf9f7;padding:.8rem;border-radius:6px;font-size:.85rem;
+                  white-space:pre-wrap;font-family:inherit">{{ f.content }}</pre>
+    </div>
+    {% endfor %}
+  {% else %}
+  <p style="color:#888">Формул пока нет. Добавьте первую выше.</p>
+  {% endif %}
+</div>
+{% endblock %}

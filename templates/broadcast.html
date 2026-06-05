@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Рассылка</h2>
+
+{% if msg %}
+<div class="alert alert-success">{{ msg }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:1.5rem">
+  <h2 style="margin-bottom:1rem">Новое сообщение</h2>
+  <p style="font-size:.85rem;color:#888;margin-bottom:1rem">
+    Сообщение получат все зарегистрированные клиенты (<strong>{{ client_count }}</strong> чел.).
+    Поддерживается HTML-разметка Telegram: <code>&lt;b&gt;жирный&lt;/b&gt;</code>, <code>&lt;i&gt;курсив&lt;/i&gt;</code>.
+  </p>
+  <form method="post" action="/broadcast">
+    <div class="form-group">
+      <label>Текст сообщения</label>
+      <textarea name="message" placeholder="Введите текст рассылки..." required></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit"
+            onclick="return confirm('Отправить рассылку {{ client_count }} клиентам?')">
+      📢 Отправить рассылку
+    </button>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:1rem">История рассылок</h2>
+  {% if broadcasts %}
+  <table>
+    <tr><th>Дата</th><th>Кому</th><th>Отправил</th><th>Текст</th></tr>
+    {% for b in broadcasts %}
+    <tr>
+      <td style="white-space:nowrap">{{ b.sent_at[:16] }}</td>
+      <td>{{ b.recipients }} чел.</td>
+      <td>{{ b.sent_by or '—' }}</td>
+      <td style="max-width:400px;font-size:.85rem">{{ b.message[:120] }}{% if b.message|length > 120 %}…{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:#888">Рассылок ещё не было</p>
+  {% endif %}
+</div>
+{% endblock %}

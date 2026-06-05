@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Добро пожаловать</h2>
+
+<div class="stats-row">
+  <div class="card stat">
+    <div class="stat-num">{{ stats.clients }}</div>
+    <div class="stat-label">Клиентов</div>
+  </div>
+  <div class="card stat">
+    <div class="stat-num">{{ stats.formulas }}</div>
+    <div class="stat-label">Формул</div>
+  </div>
+  <div class="card stat">
+    <div class="stat-num">{{ stats.broadcasts }}</div>
+    <div class="stat-label">Рассылок</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:1rem">Последние клиенты</h2>
+  {% if recent_clients %}
+  <table>
+    <tr><th>#</th><th>Имя</th><th>Телефон</th><th>Дата</th><th></th></tr>
+    {% for c in recent_clients %}
+    <tr>
+      <td>{{ c.id }}</td>
+      <td>{{ c.name }}</td>
+      <td>{{ c.phone }}</td>
+      <td>{{ c.created_at[:10] }}</td>
+      <td><a href="/clients/{{ c.id }}" class="btn btn-sm btn-primary">Открыть</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:#888">Клиентов пока нет</p>
+  {% endif %}
+</div>
+{% endblock %}

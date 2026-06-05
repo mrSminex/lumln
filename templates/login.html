@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LUM'N — Вход</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #2d2d2d; min-height: 100vh;
+         display: flex; align-items: center; justify-content: center; }
+  .box { background: white; border-radius: 12px; padding: 2.5rem; width: 100%; max-width: 360px;
+         box-shadow: 0 4px 20px rgba(0,0,0,.3); }
+  h1 { font-size: 1.5rem; text-align: center; margin-bottom: .3rem; }
+  .sub { text-align: center; color: #888; font-size: .85rem; margin-bottom: 1.8rem; }
+  .form-group { margin-bottom: 1rem; }
+  label { display: block; font-size: .85rem; font-weight: 600; margin-bottom: .3rem; }
+  input { width: 100%; padding: .7rem .9rem; border: 1px solid #ddd; border-radius: 6px;
+          font-size: .95rem; }
+  input:focus { outline: none; border-color: #2d2d2d; }
+  .btn { width: 100%; padding: .8rem; background: #2d2d2d; color: white; border: none;
+         border-radius: 6px; font-size: 1rem; cursor: pointer; margin-top: .5rem; }
+  .btn:hover { background: #444; }
+  .error { background: #fdecea; color: #c0392b; padding: .6rem .9rem;
+           border-radius: 6px; font-size: .85rem; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>LUM'N ✦</h1>
+  <p class="sub">Панель управления студией</p>
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+  <form method="post" action="/login">
+    <div class="form-group">
+      <label>Пароль</label>
+      <input type="password" name="password" placeholder="Введите пароль" autofocus>
+    </div>
+    <button class="btn" type="submit">Войти</button>
+  </form>
+</div>
+</body>
+</html>

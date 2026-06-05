@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Клиенты</h2>
+
+<div class="search-bar">
+  <form method="get" action="/clients" style="display:flex;gap:.5rem;width:100%">
+    <input type="text" name="q" value="{{ query }}" placeholder="Поиск по имени или телефону...">
+    <button class="btn btn-primary" type="submit">Найти</button>
+    {% if query %}<a href="/clients" class="btn btn-primary">Сбросить</a>{% endif %}
+  </form>
+</div>
+
+<div class="card">
+  {% if clients %}
+  <table>
+    <tr>
+      <th>#</th><th>Имя</th><th>Телефон</th>
+      <th>Формул</th><th>Дата регистрации</th><th></th>
+    </tr>
+    {% for c in clients %}
+    <tr>
+      <td>{{ c.id }}</td>
+      <td>{{ c.name }}</td>
+      <td>{{ c.phone }}</td>
+      <td><span class="badge badge-green">{{ c.formula_count }}</span></td>
+      <td>{{ c.created_at[:10] }}</td>
+      <td><a href="/clients/{{ c.id }}" class="btn btn-sm btn-primary">Открыть</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:#888">{% if query %}Ничего не найдено по запросу «{{ query }}»{% else %}Клиентов пока нет{% endif %}</p>
+  {% endif %}
+</div>
+{% endblock %}

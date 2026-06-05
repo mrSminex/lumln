@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Все формулы</h2>
+
+<div class="card">
+  {% if formulas %}
+  <table>
+    <tr><th>#</th><th>Клиент</th><th>Название</th><th>Добавил</th><th>Дата</th><th></th></tr>
+    {% for f in formulas %}
+    <tr>
+      <td>{{ f.id }}</td>
+      <td><a href="/clients/{{ f.client_id }}" style="color:#2d2d2d">{{ f.client_name }}</a></td>
+      <td>{{ f.title }}</td>
+      <td>{{ f.created_by or '—' }}</td>
+      <td>{{ f.created_at[:10] }}</td>
+      <td><a href="/clients/{{ f.client_id }}" class="btn btn-sm btn-primary">Открыть</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:#888">Формул пока нет</p>
+  {% endif %}
+</div>
+{% endblock %}
