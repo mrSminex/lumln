@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -66,11 +67,20 @@ def kb_consent() -> InlineKeyboardMarkup:
 
 def kb_admin_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👥 Список клиентов",  callback_data="adm_clients")],
-        [InlineKeyboardButton(text="➕ Добавить формулу", callback_data="adm_add_formula")],
-        [InlineKeyboardButton(text="📢 Рассылка",         callback_data="adm_broadcast")],
-        [InlineKeyboardButton(text="🗄 Создать бэкап",    callback_data="adm_backup")],
+        [InlineKeyboardButton(text="👥 Список клиентов",   callback_data="adm_clients")],
+        [InlineKeyboardButton(text="➕ Добавить формулу",  callback_data="adm_add_formula")],
+        [InlineKeyboardButton(text="📢 Рассылка",          callback_data="adm_broadcast")],
+        [InlineKeyboardButton(text="🗄 Создать бэкап",     callback_data="adm_backup")],
+        [InlineKeyboardButton(text="📊 Скачать Excel",     callback_data="adm_excel_menu")],
         [InlineKeyboardButton(text="🌐 Открыть веб-панель", callback_data="adm_webpanel")],
+    ])
+
+def kb_excel_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👥 Только клиенты",         callback_data="adm_excel_clients")],
+        [InlineKeyboardButton(text="🧪 Только формулы",         callback_data="adm_excel_formulas")],
+        [InlineKeyboardButton(text="📦 Всё (клиенты + формулы)", callback_data="adm_excel_full")],
+        [InlineKeyboardButton(text="← Назад",                   callback_data="adm_back")],
     ])
 
 def kb_backup_confirm() -> InlineKeyboardMarkup:
@@ -490,6 +500,101 @@ async def adm_backup_cancel(callback: CallbackQuery) -> None:
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+@dp.callback_query(F.data == "adm_back")
+async def adm_back(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    await callback.message.edit_text(
+        "🔧 <b>Панель администратора</b>",
+        reply_markup=kb_admin_menu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "adm_excel_menu")
+async def adm_excel_menu(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    await callback.message.edit_text(
+        "📊 <b>Экспорт в Excel</b>\n\n"
+        "Выберите что скачать — файл придёт прямо в этот чат:",
+        reply_markup=kb_excel_menu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+async def _send_excel(callback: CallbackQuery, builder, caption: str) -> None:
+    """Общая логика: строим Excel, отправляем файлом, возвращаем меню."""
+    await callback.message.edit_text("⏳ Формирую файл...")
+    await callback.answer()
+    try:
+        from aiogram.types import BufferedInputFile
+        data, filename = await builder()
+        await callback.message.answer_document(
+            document=BufferedInputFile(data, filename=filename),
+            caption=caption,
+            parse_mode="HTML",
+        )
+        await callback.message.edit_text(
+            "🔧 <b>Панель администратора</b>",
+            reply_markup=kb_admin_menu(),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        log.error(f"Excel export error: {e}")
+        await callback.message.edit_text(
+            f"❌ Ошибка при формировании файла:\n<code>{e}</code>",
+            reply_markup=kb_admin_menu(),
+            parse_mode="HTML",
+        )
+
+
+@dp.callback_query(F.data == "adm_excel_clients")
+async def adm_excel_clients(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    from excel_export import build_excel_clients
+    await _send_excel(
+        callback,
+        build_excel_clients,
+        "👥 <b>Клиентская база LUM'N</b>\n"
+        f"Дата выгрузки: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+    )
+
+
+@dp.callback_query(F.data == "adm_excel_formulas")
+async def adm_excel_formulas(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    from excel_export import build_excel_formulas
+    await _send_excel(
+        callback,
+        build_excel_formulas,
+        "🧪 <b>Все формулы LUM'N</b>\n"
+        f"Дата выгрузки: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+    )
+
+
+@dp.callback_query(F.data == "adm_excel_full")
+async def adm_excel_full(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    from excel_export import build_excel_full
+    await _send_excel(
+        callback,
+        build_excel_full,
+        "📦 <b>Полная база LUM'N</b> (клиенты + формулы)\n"
+        f"Дата выгрузки: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+    )
 
 
 @dp.callback_query(F.data == "adm_webpanel")
