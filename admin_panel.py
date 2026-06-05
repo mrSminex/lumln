@@ -1,8 +1,9 @@
 import asyncio
 import aiosqlite
 from fastapi import FastAPI, Request, Form, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+import io
 from config import ADMIN_PASSWORD, DB_PATH
 
 app = FastAPI()
@@ -255,4 +256,82 @@ async def broadcast_send(request: Request, message: str = Form(...)):
 
     return RedirectResponse(
         f"/broadcast?msg=Отправлено+{sent}+из+{len(ids)}+клиентам", status_code=302
+    )
+
+
+# ─── Экспорт в Excel ──────────────────────────────────────────────────────────
+
+@app.get("/export/excel")
+async def export_excel(request: Request):
+    if not is_auth(request):
+        return redirect_login()
+
+    from excel_export import build_excel
+    data, filename = await build_excel()
+
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ─── Бэкапы ───────────────────────────────────────────────────────────────────
+
+@app.get("/backup", response_class=HTMLResponse)
+async def backup_page(request: Request, msg: str = "", error: str = ""):
+    if not is_auth(request):
+        return redirect_login()
+
+    from backup import list_local_backups
+    from config import BACKUP_HOUR, BACKUP_KEEP, BACKUP_CHAT_ID, BACKUP_DIR
+
+    return templates.TemplateResponse("backup.html", {
+        "request": request,
+        "active": "backup",
+        "backups": list_local_backups(),
+        "backup_hour": BACKUP_HOUR,
+        "backup_keep": BACKUP_KEEP,
+        "backup_chat_id": BACKUP_CHAT_ID,
+        "backup_dir": BACKUP_DIR,
+        "msg": msg,
+        "error": error,
+    })
+
+
+@app.post("/backup/now")
+async def backup_now(request: Request):
+    if not is_auth(request):
+        return redirect_login()
+
+    from backup import run_backup
+    result = await run_backup(initiated_by="web-panel")
+
+    if result["ok"]:
+        tg_note = " + отправлен в Telegram" if result["telegram"] else ""
+        msg = f"Бэкап создан: {result['file']} ({result['size_kb']} KB{tg_note})"
+        return RedirectResponse(f"/backup?msg={msg}", status_code=302)
+    else:
+        return RedirectResponse(f"/backup?error=Ошибка: {result['error'][:80]}", status_code=302)
+
+
+@app.get("/backup/download/{filename}")
+async def backup_download(request: Request, filename: str):
+    if not is_auth(request):
+        return redirect_login()
+
+    from pathlib import Path
+    from config import BACKUP_DIR
+
+    # Защита от path traversal
+    safe_name = Path(filename).name
+    backup_path = Path(BACKUP_DIR) / safe_name
+
+    if not backup_path.exists() or not safe_name.startswith("lumln_"):
+        return HTMLResponse("Файл не найден", status_code=404)
+
+    return StreamingResponse(
+        open(backup_path, "rb"),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
     )

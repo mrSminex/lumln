@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Резервные копии базы данных</h2>
+
+{% if msg %}
+<div class="alert alert-success">✅ {{ msg }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">❌ {{ error }}</div>
+{% endif %}
+
+<!-- Настройки и ручной запуск -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem">
+
+  <div class="card">
+    <h2 style="margin-bottom:1rem">⚙️ Текущие настройки</h2>
+    <table style="width:auto;font-size:.9rem">
+      <tr>
+        <td style="color:#888;padding:.35rem 1rem .35rem 0;white-space:nowrap">Автобэкап</td>
+        <td><strong>ежедневно в {{ "%02d"|format(backup_hour) }}:00 UTC</strong></td>
+      </tr>
+      <tr>
+        <td style="color:#888;padding:.35rem 1rem .35rem 0">Хранить копий</td>
+        <td><strong>{{ backup_keep }} шт. локально</strong></td>
+      </tr>
+      <tr>
+        <td style="color:#888;padding:.35rem 1rem .35rem 0">Папка на сервере</td>
+        <td><code>{{ backup_dir }}/</code></td>
+      </tr>
+      <tr>
+        <td style="color:#888;padding:.35rem 1rem .35rem 0">Telegram</td>
+        <td>
+          {% if backup_chat_id %}
+            <span class="badge badge-green">✓ chat_id {{ backup_chat_id }}</span>
+          {% else %}
+            <span style="color:#999">не настроен</span>
+            <div style="font-size:.78rem;color:#aaa;margin-top:.2rem">
+              Добавьте <code>BACKUP_CHAT_ID</code> в .env
+            </div>
+          {% endif %}
+        </td>
+      </tr>
+    </table>
+    <div style="margin-top:1rem;font-size:.8rem;color:#aaa;line-height:1.5">
+      Изменить параметры можно в файле <code>.env</code> на сервере.<br>
+      После изменения перезапустите бота: <code>systemctl restart lumln</code>
+    </div>
+  </div>
+
+  <div class="card" style="display:flex;flex-direction:column;justify-content:space-between">
+    <div>
+      <h2 style="margin-bottom:.6rem">🚀 Ручной бэкап</h2>
+      <p style="font-size:.85rem;color:#666;margin-bottom:1rem">
+        Создать резервную копию прямо сейчас — не дожидаясь расписания.
+        Копия сохранится локально{% if backup_chat_id %} и придёт в Telegram{% endif %}.
+      </p>
+    </div>
+    <form method="post" action="/backup/now">
+      <button class="btn btn-primary" type="submit"
+              onclick="return confirm('Создать резервную копию сейчас?')">
+        🗄 Создать бэкап сейчас
+      </button>
+    </form>
+  </div>
+
+</div>
+
+<!-- Список локальных копий -->
+<div class="card">
+  <h2 style="margin-bottom:1rem">
+    📁 Локальные копии
+    <span style="font-size:.85rem;font-weight:400;color:#888">(папка <code>{{ backup_dir }}/</code> на сервере)</span>
+  </h2>
+
+  {% if backups %}
+  <table>
+    <tr>
+      <th>Файл</th>
+      <th>Размер</th>
+      <th>Дата создания</th>
+      <th>Скачать</th>
+    </tr>
+    {% for b in backups %}
+    <tr>
+      <td><code style="font-size:.85rem">{{ b.name }}</code></td>
+      <td>{{ b.size_kb }} KB</td>
+      <td>{{ b.created }}</td>
+      <td>
+        <a href="/backup/download/{{ b.name }}" class="btn btn-primary btn-sm">⬇ Скачать</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div style="margin-top:.8rem;font-size:.8rem;color:#aaa">
+    Хранится последних {{ backup_keep }} копий. Более старые удаляются автоматически.
+  </div>
+
+  {% else %}
+  <div style="color:#888;padding:.5rem 0">
+    Бэкапов пока нет. Нажмите «Создать бэкап сейчас» выше.
+  </div>
+  {% endif %}
+</div>
+
+<!-- Инструкция по восстановлению -->
+<div class="card" style="border-left:4px solid #f5e6d3">
+  <h2 style="margin-bottom:.8rem">🔄 Как восстановить базу из бэкапа</h2>
+  <ol style="font-size:.9rem;line-height:2;padding-left:1.2rem;color:#444">
+    <li>Скачайте нужный файл бэкапа (кнопка «⬇ Скачать» выше или из Telegram)</li>
+    <li>Остановите бота на сервере: <code>systemctl stop lumln</code></li>
+    <li>Замените файл базы:<br>
+      <code>cp lumln_20250614_030000.db /home/lumln/lumln/lumln.db</code></li>
+    <li>Запустите бота: <code>systemctl start lumln</code></li>
+  </ol>
+</div>
+{% endblock %}
