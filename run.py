@@ -2,21 +2,43 @@
 Запуск бота и веб-панели в одном процессе.
 """
 import asyncio
+import socket
+import sys
 import uvicorn
 import logging
 from config import ADMIN_PORT
-from aiogram.client.session.aiohttp import AiohttpSession
 
 log = logging.getLogger(__name__)
 
 
-async def main():
+def _check_port(port: int) -> None:
+    """Проверяет, свободен ли порт. Если занят — выводит понятную ошибку и завершает."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(("0.0.0.0", port))
+        except OSError:
+            log.error(
+                f"\n\n"
+                f"  ❌  Порт {port} уже занят!\n\n"
+                f"  Освободите его командой:\n"
+                f"      sudo fuser -k {port}/tcp\n\n"
+                f"  Или укажите другой порт в .env:\n"
+                f"      ADMIN_PORT=8081\n"
+            )
+            sys.exit(1)
+
+
+async def main() -> None:
+    # Проверяем порт ДО запуска — чтобы получить понятную ошибку
+    _check_port(ADMIN_PORT)
+
     # Инициализация БД
     import database as db
     await db.init_db()
     log.info("Database ready")
 
-    # Запускаем бот и веб-панель параллельно
+    # Загружаем бот и веб-панель
     from bot import run_bot
     from admin_panel import app
 
@@ -25,8 +47,12 @@ async def main():
         host="0.0.0.0",
         port=ADMIN_PORT,
         log_level="warning",
+        # SO_REUSEADDR позволяет занять порт сразу после перезапуска
+        # без ожидания TIME_WAIT (актуально на Linux)
     )
     web_server = uvicorn.Server(web_config)
+
+    log.info(f"Web panel → http://0.0.0.0:{ADMIN_PORT}")
 
     await asyncio.gather(
         run_bot(),
