@@ -69,7 +69,16 @@ def kb_admin_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="👥 Список клиентов",  callback_data="adm_clients")],
         [InlineKeyboardButton(text="➕ Добавить формулу", callback_data="adm_add_formula")],
         [InlineKeyboardButton(text="📢 Рассылка",         callback_data="adm_broadcast")],
+        [InlineKeyboardButton(text="🗄 Создать бэкап",    callback_data="adm_backup")],
         [InlineKeyboardButton(text="🌐 Открыть веб-панель", callback_data="adm_webpanel")],
+    ])
+
+def kb_backup_confirm() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Да, создать", callback_data="adm_backup_confirm"),
+            InlineKeyboardButton(text="❌ Отмена",      callback_data="adm_backup_cancel"),
+        ]
     ])
 
 def kb_phone() -> ReplyKeyboardMarkup:
@@ -418,6 +427,69 @@ async def adm_broadcast_send(message: Message, state: FSMContext) -> None:
         reply_markup=kb_admin_menu(),
     )
     log.info(f"Broadcast sent: {sent}/{len(ids)}")
+
+
+@dp.callback_query(F.data == "adm_backup")
+async def adm_backup(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+
+    from backup import list_local_backups
+    local = list_local_backups()
+    last_info = (
+        f"Последняя копия: <b>{local[0]['name']}</b> — {local[0]['created']} ({local[0]['size_kb']} KB)"
+        if local else "Локальных копий ещё нет."
+    )
+    await callback.message.edit_text(
+        f"🗄 <b>Резервная копия базы данных</b>\n\n"
+        f"{last_info}\n\n"
+        "Создать бэкап прямо сейчас?\n"
+        "<i>Файл сохранится локально на сервере и будет отправлен вам в Telegram.</i>",
+        reply_markup=kb_backup_confirm(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "adm_backup_confirm")
+async def adm_backup_confirm(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+
+    await callback.message.edit_text("⏳ Создаю резервную копию...")
+    await callback.answer()
+
+    from backup import run_backup
+    result = await run_backup(initiated_by=f"tg:{callback.from_user.full_name}")
+
+    if result["ok"]:
+        tg_line = (
+            "📨 Файл отправлен вам в Telegram."
+            if result["telegram"]
+            else "⚠️ Не удалось отправить в Telegram (проверьте BACKUP_CHAT_ID в .env)."
+        )
+        text = (
+            f"✅ <b>Бэкап создан успешно!</b>\n\n"
+            f"📁 Файл: <code>{result['file']}</code>\n"
+            f"💾 Размер: {result['size_kb']} KB\n"
+            f"{tg_line}"
+        )
+    else:
+        text = f"❌ <b>Ошибка при создании бэкапа:</b>\n<code>{result['error']}</code>"
+
+    await callback.message.edit_text(text, reply_markup=kb_admin_menu(), parse_mode="HTML")
+
+
+@dp.callback_query(F.data == "adm_backup_cancel")
+async def adm_backup_cancel(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(
+        "🔧 <b>Панель администратора</b>",
+        reply_markup=kb_admin_menu(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "adm_webpanel")
