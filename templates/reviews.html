@@ -42,16 +42,16 @@
     </tr>
     {% endfor %}
   </table>
-  <div style="margin-top:1rem;font-size:.8rem;color:#888">
-    <strong>Статистика:</strong>
-    Всего отзывов: {{ reviews|length }} |
-    <p><strong>Среднее за сессию:</strong> 
-    {{ (reviews|selectattr('q1_score', 'ne', None)|map(attribute='q1_score')|sum / (reviews|selectattr('q1_score', 'ne', None)|list|length or 1))|round(1) }}/5
-    </p>
-    <p><strong>Среднее за аромат:</strong> 
-    {{ (reviews|selectattr('q2_score', 'ne', None)|map(attribute='q2_score')|sum / (reviews|selectattr('q2_score', 'ne', None)|list|length or 1))|round(1) }}/5
-    </p>
+
+  <div style="margin-top:1rem;font-size:.9rem;color:#555">
+    <strong>Статистика:</strong><br>
+    Всего отзывов: <strong>{{ reviews|length }}</strong> |
+    Среднее за сессию: <strong>{{ (reviews|map(attribute='q1_score')|sum / (reviews|length or 1))|round(1) }}</strong>/5 |
+    Среднее за аромат: 
+    {% set q2_list = reviews|selectattr('q2_score', 'ne', None)|map(attribute='q2_score')|list %}
+    <strong>{{ (q2_list|sum / (q2_list|length or 1))|round(1) }}</strong>/5
   </div>
+
   {% else %}
   <p style="color:#888">Отзывов пока нет</p>
   {% endif %}
