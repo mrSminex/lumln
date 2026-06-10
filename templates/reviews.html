@@ -45,8 +45,12 @@
   <div style="margin-top:1rem;font-size:.8rem;color:#888">
     <strong>Статистика:</strong>
     Всего отзывов: {{ reviews|length }} |
-    Среднее за сессию: {{ (reviews|map(attribute='q1_score')|sum / reviews|length)|round(1) }}/5 |
-    Среднее за аромат: {{ (reviews|map(attribute='q2_score')|selectattr('q2_score','ne',None)|map(attribute='q2_score')|sum / (reviews|map(attribute='q2_score')|selectattr('!='None)|list|length or 1))|round(1) }}/5
+    <p><strong>Среднее за сессию:</strong> 
+    {{ (reviews|selectattr('q1_score', 'ne', None)|map(attribute='q1_score')|sum / (reviews|selectattr('q1_score', 'ne', None)|list|length or 1))|round(1) }}/5
+    </p>
+    <p><strong>Среднее за аромат:</strong> 
+    {{ (reviews|selectattr('q2_score', 'ne', None)|map(attribute='q2_score')|sum / (reviews|selectattr('q2_score', 'ne', None)|list|length or 1))|round(1) }}/5
+    </p>
   </div>
   {% else %}
   <p style="color:#888">Отзывов пока нет</p>
