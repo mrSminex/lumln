@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>📝 Отзывы клиентов</h2>
+
+<div class="card">
+  {% if reviews %}
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>Клиент</th>
+      <th>Формула</th>
+      <th>Сессия (Q1)</th>
+      <th>Аромат (Q2)</th>
+      <th>Обратная связь</th>
+      <th>Дата</th>
+    </tr>
+    {% for r in reviews %}
+    <tr>
+      <td><strong>#{{ r.id }}</strong></td>
+      <td>{{ r.client_name }}</td>
+      <td>{{ r.formula_title or '—' }}</td>
+      <td>
+        <span style="
+          padding:.2rem .5rem;border-radius:4px;font-weight:600;
+          {% if r.q1_score >= 4 %}background:#e8f5e9;color:#2e7d32
+          {% elif r.q1_score >= 3 %}background:#fff3e0;color:#e65100
+          {% else %}background:#fdecea;color:#c0392b
+          {% endif %}
+        ">{{ r.q1_score }}/5</span>
+      </td>
+      <td>
+        <span style="
+          padding:.2rem .5rem;border-radius:4px;font-weight:600;
+          {% if r.q2_score >= 4 %}background:#e8f5e9;color:#2e7d32
+          {% elif r.q2_score >= 3 %}background:#fff3e0;color:#e65100
+          {% else %}background:#fdecea;color:#c0392b
+          {% endif %}
+        ">{{ r.q2_score or '—' }}{% if r.q2_score %}/5{% endif %}</span>
+      </td>
+      <td style="font-size:.8rem;max-width:300px">{{ r.feedback[:60] or '—' }}{% if r.feedback and r.feedback|length > 60 %}…{% endif %}</td>
+      <td style="white-space:nowrap;font-size:.85rem">{{ r.created_at[:16].replace('-', '.').replace('T', ' ') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div style="margin-top:1rem;font-size:.8rem;color:#888">
+    <strong>Статистика:</strong>
+    Всего отзывов: {{ reviews|length }} |
+    Среднее за сессию: {{ (reviews|map(attribute='q1_score')|sum / reviews|length)|round(1) }}/5 |
+    Среднее за аромат: {{ (reviews|map(attribute='q2_score')|selectattr('q2_score','ne',None)|map(attribute='q2_score')|sum / (reviews|map(attribute='q2_score')|selectattr('!='None)|list|length or 1))|round(1) }}/5
+  </div>
+  {% else %}
+  <p style="color:#888">Отзывов пока нет</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>🎁 Заявки на сертификаты</h2>
+
+<div class="card">
+  {% if requests %}
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>Клиент</th>
+      <th>Тип</th>
+      <th>Людей</th>
+      <th>Тариф</th>
+      <th>Дата заявки</th>
+    </tr>
+    {% for r in requests %}
+    <tr>
+      <td><strong>#{{ r.id }}</strong></td>
+      <td>{{ r.client_name }}</td>
+      <td>
+        {% if r.cert_type == 'digital' %}📧 Электронный
+        {% else %}📦 Физический
+        {% endif %}
+      </td>
+      <td>{{ r.persons }}</td>
+      <td>
+        {% if r.tariff == 'standard' %}🌿 Стандартная
+        {% elif r.tariff == 'individual' %}👤 Индивидуальная
+        {% elif r.tariff == 'pair' %}👫 Парная
+        {% else %}👨‍👩‍👦 На троих
+        {% endif %}
+      </td>
+      <td>{{ r.created_at[:16].replace('-', '.').replace('T', ' ') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:#888">Заявок на сертификаты нет</p>
+  {% endif %}
+</div>
+{% endblock %}

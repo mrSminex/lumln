@@ -64,10 +64,15 @@
   <a href="/clients" {% if active == 'clients' %}class="active"{% endif %}>Клиенты</a>
   <a href="/formulas" {% if active == 'formulas' %}class="active"{% endif %}>Формулы</a>
   <a href="/broadcast" {% if active == 'broadcast' %}class="active"{% endif %}>Рассылка</a>
+  <a href="/individual-message" {% if active == 'messages' %}class="active"{% endif %}>✉️ Личное</a>
+  <a href="/scheduled" {% if active == 'scheduled' %}class="active"{% endif %}>⏰ Отложено</a>
+  <a href="/certificates" {% if active == 'certificates' %}class="active"{% endif %}>🎁 Сертификаты</a>
+  <a href="/reorders" {% if active == 'reorders' %}class="active"{% endif %}>🔁 Повторы</a>
+  <a href="/reviews" {% if active == 'reviews' %}class="active"{% endif %}>📝 Отзывы</a>
   <a href="/backup" {% if active == 'backup' %}class="active"{% endif %}>Бэкапы</a>
-  <a href="/export/clients"  class="nav-export" title="Скачать список клиентов (Excel)">⬇ Клиенты</a>
-  <a href="/export/formulas" class="nav-export" title="Скачать все формулы (Excel)">⬇ Формулы</a>
-  <a href="/export/full"     class="nav-export nav-export--full" title="Клиенты + Формулы одним файлом">⬇ Всё</a>
+  <a href="/export/clients"  class="nav-export" title="Скачать список клиентов">⬇ Клиенты</a>
+  <a href="/export/formulas" class="nav-export" title="Скачать все формулы">⬇ Формулы</a>
+  <a href="/export/full"     class="nav-export nav-export--full" title="Всё">⬇ Всё</a>
   <a href="/logout">Выйти</a>
 </nav>
 <main>

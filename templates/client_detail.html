@@ -52,10 +52,13 @@
             {% if f.created_by %} · {{ f.created_by }}{% endif %}
           </div>
         </div>
-        <form method="post" action="/formulas/{{ f.id }}/delete"
-              onsubmit="return confirm('Удалить формулу?')">
-          <button class="btn btn-danger btn-sm" type="submit">Удалить</button>
-        </form>
+        <div>
+          <a href="/formulas/{{ f.id }}/edit" class="btn btn-primary btn-sm" style="margin-right:.3rem">✏️ Ред.</a>
+          <form method="post" action="/formulas/{{ f.id }}/delete" style="display:inline"
+                onsubmit="return confirm('Удалить формулу?')">
+            <button class="btn btn-danger btn-sm" type="submit">Удалить</button>
+          </form>
+        </div>
       </div>
       <pre style="background:#faf9f7;padding:.8rem;border-radius:6px;font-size:.85rem;
                   white-space:pre-wrap;font-family:inherit">{{ f.content }}</pre>

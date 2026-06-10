@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>🔁 Заявки на повтор парфюма</h2>
+
+<div class="card">
+  {% if requests %}
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>Клиент</th>
+      <th>Формула</th>
+      <th>Объём</th>
+      <th>Дата заявки</th>
+    </tr>
+    {% for r in requests %}
+    <tr>
+      <td><strong>#{{ r.id }}</strong></td>
+      <td>{{ r.client_name }}</td>
+      <td>{{ r.formula_title }}</td>
+      <td>{{ r.volume }} мл</td>
+      <td>{{ r.created_at[:16].replace('-', '.').replace('T', ' ') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:#888">Заявок на повтор нет</p>
+  {% endif %}
+</div>
+{% endblock %}

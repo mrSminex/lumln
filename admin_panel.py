@@ -1,5 +1,6 @@
 import asyncio
 import aiosqlite
+from datetime import datetime
 from fastapi import FastAPI, Request, Form, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -162,7 +163,6 @@ async def add_formula(request: Request, client_id: int,
         )
         await db.commit()
 
-    # Уведомляем клиента через бот
     client = await _client(client_id)
     if client:
         try:
@@ -179,6 +179,76 @@ async def add_formula(request: Request, client_id: int,
     return RedirectResponse(
         f"/clients/{client_id}?msg=Формула+добавлена", status_code=302
     )
+
+
+@app.get("/formulas/{formula_id}/edit", response_class=HTMLResponse)
+async def edit_formula_page(request: Request, formula_id: int):
+    if not is_auth(request):
+        return redirect_login()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT f.*, c.name as client_name FROM formulas f "
+            "JOIN clients c ON c.id = f.client_id WHERE f.id = ?", (formula_id,)
+        ) as cur:
+            formula = dict(await cur.fetchone()) if await cur.fetchone() else None
+    if not formula:
+        return RedirectResponse("/formulas", status_code=302)
+
+    async with db.execute("SELECT * FROM formulas WHERE id = ?", (formula_id,)) as cur:
+        await cur.fetchone()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT f.*, c.name as client_name FROM formulas f "
+            "JOIN clients c ON c.id = f.client_id WHERE f.id = ?", (formula_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            formula = dict(row) if row else None
+
+    return templates.TemplateResponse("formula_edit.html", {
+        "request": request, "active": "formulas", "formula": formula,
+    })
+
+
+@app.post("/formulas/{formula_id}/edit")
+async def edit_formula_save(request: Request, formula_id: int,
+                            content: str = Form(...)):
+    if not is_auth(request):
+        return redirect_login()
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT client_id FROM formulas WHERE id = ?", (formula_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return RedirectResponse("/formulas", status_code=302)
+
+        client_id = row[0]
+        await db.execute(
+            "UPDATE formulas SET content = ? WHERE id = ?",
+            (content, formula_id)
+        )
+        await db.commit()
+
+    client = await _client(client_id)
+    if client:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT title FROM formulas WHERE id = ?", (formula_id,)) as cur:
+                formula = dict(await cur.fetchone())
+        try:
+            from bot import bot
+            await bot.send_message(
+                client["telegram_id"],
+                f"📝 <b>Ваша формула была обновлена</b>\n\n"
+                f"<b>{formula['title']}</b>\n\n{content}",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    return RedirectResponse(f"/clients/{client_id}?msg=Формула+обновлена", status_code=302)
 
 
 @app.post("/formulas/{formula_id}/delete")
@@ -259,6 +329,153 @@ async def broadcast_send(request: Request, message: str = Form(...)):
     )
 
 
+# ─── Новые маршруты ───────────────────────────────────────────────────────────
+
+@app.get("/individual-message", response_class=HTMLResponse)
+async def individual_message_page(request: Request, msg: str = ""):
+    if not is_auth(request):
+        return redirect_login()
+    clients = await _all_clients_with_counts()
+    return templates.TemplateResponse("individual_message.html", {
+        "request": request, "active": "messages", "clients": clients, "msg": msg,
+    })
+
+
+@app.post("/individual-message")
+async def individual_message_send(request: Request, client_id: int = Form(...),
+                                  message: str = Form(...)):
+    if not is_auth(request):
+        return redirect_login()
+
+    client = await _client(client_id)
+    if not client:
+        return RedirectResponse("/individual-message?msg=Клиент+не+найден", status_code=302)
+
+    try:
+        from bot import bot
+        await bot.send_message(client["telegram_id"], message, parse_mode="HTML")
+        return RedirectResponse(
+            f"/individual-message?msg=Отправлено+клиенту+{client['name']}", status_code=302
+        )
+    except Exception as e:
+        return RedirectResponse(
+            f"/individual-message?msg=Ошибка:+{str(e)[:40]}", status_code=302
+        )
+
+
+@app.get("/scheduled", response_class=HTMLResponse)
+async def scheduled_page(request: Request, msg: str = ""):
+    if not is_auth(request):
+        return redirect_login()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM scheduled_messages WHERE sent = 0 ORDER BY send_at DESC"
+        ) as cur:
+            scheduled = [dict(r) for r in await cur.fetchall()]
+    clients = await _all_clients_with_counts()
+    return templates.TemplateResponse("scheduled.html", {
+        "request": request, "active": "scheduled", "scheduled": scheduled,
+        "clients": clients, "msg": msg,
+    })
+
+
+@app.post("/scheduled")
+async def scheduled_create(request: Request, target: str = Form(...),
+                          message: str = Form(...), send_at: str = Form(...)):
+    if not is_auth(request):
+        return redirect_login()
+
+    try:
+        dt = datetime.strptime(send_at, "%Y-%m-%dT%H:%M")
+        send_at_str = dt.strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return RedirectResponse("/scheduled?msg=Неверный+формат+даты", status_code=302)
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        if target == "all":
+            ids = await _get_all_telegram_ids()
+        else:
+            client = await _client(int(target))
+            ids = [client["telegram_id"]] if client else []
+
+        for tid in ids:
+            await db.execute(
+                "INSERT INTO scheduled_messages (telegram_id, message, send_at) VALUES (?, ?, ?)",
+                (tid, message, send_at_str),
+            )
+        await db.commit()
+
+    return RedirectResponse(
+        f"/scheduled?msg=Запланировано+для+{len(ids)}+получателей", status_code=302
+    )
+
+
+@app.post("/scheduled/{msg_id}/delete")
+async def scheduled_delete(request: Request, msg_id: int):
+    if not is_auth(request):
+        return redirect_login()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM scheduled_messages WHERE id = ?", (msg_id,))
+        await db.commit()
+    return RedirectResponse("/scheduled?msg=Сообщение+удалено", status_code=302)
+
+
+@app.get("/certificates", response_class=HTMLResponse)
+async def certificates_page(request: Request):
+    if not is_auth(request):
+        return redirect_login()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM certificate_requests ORDER BY created_at DESC"
+        ) as cur:
+            requests = [dict(r) for r in await cur.fetchall()]
+    return templates.TemplateResponse("certificates.html", {
+        "request": request, "active": "certificates", "requests": requests,
+    })
+
+
+@app.get("/reorders", response_class=HTMLResponse)
+async def reorders_page(request: Request):
+    if not is_auth(request):
+        return redirect_login()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM reorder_requests ORDER BY created_at DESC"
+        ) as cur:
+            requests = [dict(r) for r in await cur.fetchall()]
+    return templates.TemplateResponse("reorders.html", {
+        "request": request, "active": "reorders", "requests": requests,
+    })
+
+
+@app.get("/reviews", response_class=HTMLResponse)
+async def reviews_page(request: Request):
+    if not is_auth(request):
+        return redirect_login()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT r.*, c.name as client_name, f.title as formula_title "
+            "FROM reviews r "
+            "JOIN clients c ON c.id = r.client_id "
+            "LEFT JOIN formulas f ON f.id = r.formula_id "
+            "ORDER BY r.created_at DESC"
+        ) as cur:
+            reviews = [dict(r) for r in await cur.fetchall()]
+    return templates.TemplateResponse("reviews.html", {
+        "request": request, "active": "reviews", "reviews": reviews,
+    })
+
+
+async def _get_all_telegram_ids():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT telegram_id FROM clients") as cur:
+            return [r[0] for r in await cur.fetchall()]
+
+
 # ─── Экспорт в Excel ──────────────────────────────────────────────────────────
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -274,7 +491,6 @@ def _xlsx_response(data: bytes, filename: str) -> StreamingResponse:
 
 @app.get("/export/full")
 async def export_full(request: Request):
-    """Клиенты + Формулы — два листа в одном файле."""
     if not is_auth(request):
         return redirect_login()
     from excel_export import build_excel_full
@@ -283,7 +499,6 @@ async def export_full(request: Request):
 
 @app.get("/export/clients")
 async def export_clients(request: Request):
-    """Только клиенты."""
     if not is_auth(request):
         return redirect_login()
     from excel_export import build_excel_clients
@@ -292,7 +507,6 @@ async def export_clients(request: Request):
 
 @app.get("/export/formulas")
 async def export_formulas(request: Request):
-    """Только формулы."""
     if not is_auth(request):
         return redirect_login()
     from excel_export import build_excel_formulas
@@ -346,7 +560,6 @@ async def backup_download(request: Request, filename: str):
     from pathlib import Path
     from config import BACKUP_DIR
 
-    # Защита от path traversal
     safe_name = Path(filename).name
     backup_path = Path(BACKUP_DIR) / safe_name
 

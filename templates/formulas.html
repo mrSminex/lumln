@@ -13,7 +13,10 @@
       <td>{{ f.title }}</td>
       <td>{{ f.created_by or '—' }}</td>
       <td>{{ f.created_at[:10] }}</td>
-      <td><a href="/clients/{{ f.client_id }}" class="btn btn-sm btn-primary">Открыть</a></td>
+      <td>
+        <a href="/formulas/{{ f.id }}/edit" class="btn btn-sm btn-primary">✏️ Ред.</a>
+        <a href="/clients/{{ f.client_id }}" class="btn btn-sm btn-primary">👁 Клиент</a>
+      </td>
     </tr>
     {% endfor %}
   </table>
