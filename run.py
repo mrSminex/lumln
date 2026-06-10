@@ -55,10 +55,13 @@ async def main() -> None:
     log.info(f"Web panel → http://0.0.0.0:{ADMIN_PORT}")
 
     from backup import backup_scheduler
+    from tasks import scheduled_messages_sender, review_requester
     await asyncio.gather(
         run_bot(),
         web_server.serve(),
         backup_scheduler(),
+        scheduled_messages_sender(),
+        review_requester(),
     )
 
 
