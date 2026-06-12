@@ -1,16 +1,4 @@
-# Деплой LUM'N бота на Ubuntu 22.04
-
-## Что понадобится
-
-- VPS-сервер с Ubuntu 22.04 (минимум 1 CPU / 512 MB RAM)
-- Доступ по SSH (логин + пароль или SSH-ключ)
-- Домен или просто IP-адрес сервера
-
-**Где купить сервер (от 200 ₽/мес):**
-- [Timeweb Cloud](https://timeweb.cloud) — КВМ-1, 1 CPU / 1 GB / Ubuntu 22.04
-- [Selectel](https://selectel.ru) — аналогично
-- [Aeza](https://aeza.net) — часто дешевле, серверы в Европе
-
+# Деплой LUM'N бота на Ubuntu
 ---
 
 ## Шаг 1 — Подключиться к серверу
@@ -32,12 +20,12 @@ ssh root@ВАШ_IP_АДРЕС
 apt update && apt upgrade -y
 
 # Устанавливаем Python 3.11, pip, git, утилиты
-apt install -y python3.11 python3.11-venv python3-pip git nano curl
+apt install -y python3.13 python3.13-venv python3-pip git nano curl
 ```
 
 Проверяем Python:
 ```bash
-python3.11 --version
+python3.13 --version
 # Должно вывести: Python 3.11.x
 ```
 
@@ -59,8 +47,8 @@ su - lumln
 
 ### Вариант А: Через Git (если код в репозитории)
 ```bash
-git clone https://github.com/ВАШ_АККАУНТ/cc_lumln.git
-cd cc_lumln
+git clone https://github.com/ВАШ_АККАУНТ/lumln.git
+cd lumln
 ```
 
 ### Вариант Б: Загрузить с Windows через SCP (без Git)
@@ -69,12 +57,12 @@ cd cc_lumln
 
 ```powershell
 # Загружаем всю папку проекта на сервер
-scp -r "D:\studies\Work\cc_lumln" root@ВАШ_IP:/home/lumln/cc_lumln
+scp -r "D:\studies\Work\lumln" root@ВАШ_IP:/home/lumln/lumln
 ```
 
 Вернитесь в SSH-сессию:
 ```bash
-cd /home/lumln/cc_lumln
+cd /home/lumln/lumln
 ```
 
 ---
@@ -83,7 +71,7 @@ cd /home/lumln/cc_lumln
 
 ```bash
 # Создаём виртуальное окружение
-python3.11 -m venv venv
+python3.13 -m venv venv
 
 # Активируем его
 source venv/bin/activate
