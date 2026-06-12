@@ -185,28 +185,26 @@ async def add_formula(request: Request, client_id: int,
 async def edit_formula_page(request: Request, formula_id: int):
     if not is_auth(request):
         return redirect_login()
+
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT f.*, c.name as client_name FROM formulas f "
-            "JOIN clients c ON c.id = f.client_id WHERE f.id = ?", (formula_id,)
-        ) as cur:
-            formula = dict(await cur.fetchone()) if await cur.fetchone() else None
-    if not formula:
-        return RedirectResponse("/formulas", status_code=302)
-
-    async with db.execute("SELECT * FROM formulas WHERE id = ?", (formula_id,)) as cur:
-        await cur.fetchone()
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT f.*, c.name as client_name FROM formulas f "
-            "JOIN clients c ON c.id = f.client_id WHERE f.id = ?", (formula_id,)
+            """SELECT f.*, c.name as client_name 
+               FROM formulas f 
+               JOIN clients c ON c.id = f.client_id 
+               WHERE f.id = ?""",
+            (formula_id,)
         ) as cur:
             row = await cur.fetchone()
             formula = dict(row) if row else None
 
+    if not formula:
+        return RedirectResponse("/formulas", status_code=302)
+
     return templates.TemplateResponse("formula_edit.html", {
-        "request": request, "active": "formulas", "formula": formula,
+        "request": request, 
+        "active": "formulas", 
+        "formula": formula,
     })
 
 
