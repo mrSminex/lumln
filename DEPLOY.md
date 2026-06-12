@@ -57,12 +57,12 @@ cd lumln
 
 ```powershell
 # Загружаем всю папку проекта на сервер
-scp -r "D:\studies\Work\lumln" root@ВАШ_IP:/home/lumln/lumln
+scp -r "D:\path\lumln" root@ВАШ_IP:/home/lumln/
 ```
 
 Вернитесь в SSH-сессию:
 ```bash
-cd /home/lumln/lumln
+cd /home/lumln
 ```
 
 ---
@@ -103,7 +103,9 @@ YCLIENTS_URL=https://n1234567.yclients.com/...
 PRIVACY_URL=https://telegra.ph/...
 OFFER_URL=https://telegra.ph/...
 ADMIN_PORT=8080
-PROXY=
+PROXY=BACKUP_CHAT_ID=123456789
+BACKUP_HOUR=3
+BACKUP_KEEP=3
 ```
 
 > ⚠️ На европейском/американском сервере `PROXY=` оставьте **пустым** —
@@ -151,8 +153,8 @@ After=network.target
 [Service]
 Type=simple
 User=lumln
-WorkingDirectory=/home/lumln/cc_lumln
-ExecStart=/home/lumln/cc_lumln/venv/bin/python run.py
+WorkingDirectory=/home/lumln/
+ExecStart=/home/lumln/venv/bin/python run.py
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -267,38 +269,18 @@ journalctl -u lumln -n 50
 
 ```powershell
 # В PowerShell на вашем Windows-компьютере:
-scp root@ВАШ_IP:/home/lumln/cc_lumln/lumln.db "D:\Backups\lumln_backup.db"
+scp root@ВАШ_IP:/home/lumln/lumln.db "D:\Backups\lumln_backup.db"
 ```
-
-Рекомендуется делать раз в неделю, или настроить автоматически через cron:
-
-```bash
-# Автобэкап каждый день в 3:00 ночи
-crontab -e
-# Добавьте строку:
-0 3 * * * cp /home/lumln/cc_lumln/lumln.db /home/lumln/backups/lumln_$(date +\%Y\%m\%d).db
-```
-
 ---
 
 ## Обновление кода (если что-то поменяли)
 
 ```bash
 # Загрузить новые файлы с компьютера
-scp -r "D:\studies\Work\cc_lumln" root@ВАШ_IP:/home/lumln/cc_lumln
+scp -r "D:\path\lumln" root@ВАШ_IP:/home/lumln/
 
 # Перезапустить бота
 systemctl restart lumln
 ```
 
 ---
-
-## Быстрая диагностика проблем
-
-| Симптом | Что проверить |
-|---------|--------------|
-| Бот не отвечает | `systemctl status lumln` → смотрите ошибку |
-| Веб-панель не открывается | `ufw status` — порт 8080 открыт? |
-| Ошибка токена | Проверьте `BOT_TOKEN` в `.env` |
-| `ModuleNotFoundError` | `source venv/bin/activate` и `pip install -r requirements.txt` |
-| База не создаётся | Проверьте права: `chown -R lumln:lumln /home/lumln/cc_lumln` |
