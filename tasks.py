@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 async def scheduled_messages_sender() -> None:
     """Каждую минуту проверяет таблицу scheduled_messages и отправляет готовые."""
-    log.info("Scheduled messages sender started")
+    log.info("Scheduled messages sender started!")
     while True:
         await asyncio.sleep(60)
         try:
