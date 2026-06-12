@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 import io
 from config import ADMIN_PASSWORD, DB_PATH
+from tz_utils import now_msk
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -375,6 +376,7 @@ async def scheduled_page(request: Request, msg: str = ""):
     return templates.TemplateResponse("scheduled.html", {
         "request": request, "active": "scheduled", "scheduled": scheduled,
         "clients": clients, "msg": msg,
+        "now_msk": now_msk().strftime("%Y-%m-%dT%H:%M"),
     })
 
 
@@ -389,6 +391,12 @@ async def scheduled_create(request: Request, target: str = Form(...),
         send_at_str = dt.strftime("%Y-%m-%d %H:%M")
     except ValueError:
         return RedirectResponse("/scheduled?msg=Неверный+формат+даты", status_code=302)
+
+    if dt <= now_msk():
+        return RedirectResponse(
+            "/scheduled?msg=Время+уже+прошло+(МСК).+Введите+дату+в+будущем",
+            status_code=302,
+        )
 
     async with aiosqlite.connect(DB_PATH) as db:
         if target == "all":

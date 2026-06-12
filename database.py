@@ -1,5 +1,6 @@
 import aiosqlite
 from config import DB_PATH
+from tz_utils import now_msk
 
 
 async def init_db() -> None:
@@ -242,7 +243,7 @@ async def create_scheduled_message(telegram_id: int, message: str, send_at: str)
 
 async def get_pending_scheduled_messages() -> list[dict]:
     """Возвращает сообщения, у которых send_at <= текущего времени и ещё не отправлены."""
-    now = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = now_msk().strftime("%Y-%m-%d %H:%M")
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(

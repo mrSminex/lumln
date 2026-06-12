@@ -15,6 +15,7 @@ from aiogram.types import (
 
 import database as db
 from config import BOT_TOKEN, ADMIN_IDS, YCLIENTS_URL, PRIVACY_URL, OFFER_URL, PROXY
+from tz_utils import now_msk
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -1111,8 +1112,9 @@ async def adm_schedule_message(message: Message, state: FSMContext) -> None:
     if not is_admin(message.from_user.id): return
     await state.update_data(message=message.text.strip())
     await message.answer(
-        "Введите <b>дату и время отправки</b> в формате:\n<code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n\n"
-        f"Например: <code>{datetime.now().strftime('%d.%m.%Y')} 14:00</code>",
+        "Введите <b>дату и время отправки по московскому времени (МСК)</b> в формате:\n"
+        "<code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n\n"
+        f"Например: <code>{now_msk().strftime('%d.%m.%Y')} 14:00</code>",
         parse_mode="HTML",
     )
     await state.set_state(AdminSchedule.waiting_datetime)
@@ -1127,8 +1129,8 @@ async def adm_schedule_datetime(message: Message, state: FSMContext) -> None:
     except ValueError:
         await message.answer("Неверный формат. Введите: <code>ДД.ММ.ГГГГ ЧЧ:ММ</code>", parse_mode="HTML")
         return
-    if send_dt <= datetime.now():
-        await message.answer("Время уже прошло. Введите дату в будущем.")
+    if send_dt <= now_msk():
+        await message.answer("Время уже прошло (по МСК). Введите дату в будущем.")
         return
 
     await state.update_data(send_at=send_dt.strftime("%Y-%m-%d %H:%M"))
@@ -1136,7 +1138,7 @@ async def adm_schedule_datetime(message: Message, state: FSMContext) -> None:
     await message.answer(
         f"⏰ <b>Подтвердите отложенное сообщение:</b>\n\n"
         f"👤 Кому: <b>{data['target_label']}</b>\n"
-        f"📅 Когда: <b>{send_dt.strftime('%d.%m.%Y в %H:%M')}</b>\n\n"
+        f"📅 Когда: <b>{send_dt.strftime('%d.%m.%Y в %H:%M')} (МСК)</b>\n\n"
         f"{'─'*25}\n{data['message']}\n{'─'*25}",
         reply_markup=kb_schedule_confirm(),
         parse_mode="HTML",

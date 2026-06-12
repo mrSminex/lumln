@@ -26,8 +26,8 @@
       <textarea name="message" required></textarea>
     </div>
     <div class="form-group">
-      <label>Дата и время отправки:</label>
-      <input type="datetime-local" name="send_at" required>
+      <label>Дата и время отправки (по московскому времени, МСК):</label>
+      <input type="datetime-local" name="send_at" min="{{ now_msk }}" required>
     </div>
     <button class="btn btn-primary" type="submit">✅ Запланировать</button>
   </form>
@@ -38,7 +38,7 @@
   {% if scheduled %}
   <table>
     <tr>
-      <th>Дата отправки</th>
+      <th>Дата отправки (МСК)</th>
       <th>Получатель (TG ID)</th>
       <th>Текст сообщения</th>
       <th></th>
