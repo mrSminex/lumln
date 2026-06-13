@@ -62,8 +62,12 @@ class AdminAddFormula(StatesGroup):
     waiting_content   = State()
 
 class AdminEditFormula(StatesGroup):
+    waiting_client_id   = State()
     waiting_formula_id  = State()
     waiting_new_content = State()
+
+class AdminAddAdmin(StatesGroup):
+    waiting_id = State()
 
 class AdminBroadcastAll(StatesGroup):
     waiting_message = State()
@@ -161,6 +165,17 @@ def kb_formula_select(formulas: list[dict]) -> InlineKeyboardMarkup:
     buttons.append([InlineKeyboardButton(text="← Отмена", callback_data="main_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def kb_formula_select_edit(formulas: list[dict]) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"#{f['id']} — {f['title'][:35]}",
+            callback_data=f"edit_f_{f['id']}"
+        )]
+        for f in formulas
+    ]
+    buttons.append([InlineKeyboardButton(text="← Отмена", callback_data="main_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 # ── Рейтинг 1–5 ──────────────────────────────────────────────────────────────
 
 def kb_rating(prefix: str) -> InlineKeyboardMarkup:
@@ -181,6 +196,7 @@ def kb_admin_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⏰ Отложенное сообщение",   callback_data="adm_schedule")],
         [InlineKeyboardButton(text="🗄 Создать бэкап",          callback_data="adm_backup")],
         [InlineKeyboardButton(text="📊 Скачать Excel",          callback_data="adm_excel_menu")],
+        [InlineKeyboardButton(text="👤 Администраторы",         callback_data="adm_admins")],
         [InlineKeyboardButton(text="🌐 Открыть веб-панель",     callback_data="adm_webpanel")],
     ])
 
@@ -234,12 +250,40 @@ def kb_excel_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="← Назад",                     callback_data="adm_back")],
     ])
 
+def kb_admins_menu(extra_admins: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for a in extra_admins:
+        label = a["name"] or str(a["telegram_id"])
+        rows.append([InlineKeyboardButton(
+            text=f"❌ {label} ({a['telegram_id']})",
+            callback_data=f"adm_admin_del_{a['telegram_id']}",
+        )])
+    rows.append([InlineKeyboardButton(text="➕ Добавить администратора", callback_data="adm_admin_add")])
+    rows.append([InlineKeyboardButton(text="← Назад", callback_data="adm_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Доп. админы, добавленные через бота (помимо ADMIN_IDS из .env).
+# Загружаются из БД при старте и обновляются при добавлении/удалении.
+EXTRA_ADMIN_IDS: set[int] = set()
+
+
+async def load_extra_admins() -> None:
+    global EXTRA_ADMIN_IDS
+    admins = await db.get_extra_admins()
+    EXTRA_ADMIN_IDS = {a["telegram_id"] for a in admins}
+
+
 def is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS or user_id in EXTRA_ADMIN_IDS
+
+
+def is_super_admin(user_id: int) -> bool:
+    """Только админы из .env (ADMIN_IDS) могут управлять списком администраторов."""
     return user_id in ADMIN_IDS
 
 TARIFF_NAMES = {
@@ -835,36 +879,63 @@ async def adm_edit_formula_start(callback: CallbackQuery, state: FSMContext) -> 
         await callback.answer("Доступ запрещён", show_alert=True)
         return
     await callback.message.answer(
-        "✏️ <b>Редактирование формулы</b>\n\nВведите <b>ID формулы</b>:\n"
-        "<i>ID виден в веб-панели или в списке «Мои формулы» у клиента.</i>",
+        "✏️ <b>Редактирование формулы</b>\n\nВведите <b>ID клиента</b>:",
         parse_mode="HTML",
     )
-    await state.set_state(AdminEditFormula.waiting_formula_id)
+    await state.set_state(AdminEditFormula.waiting_client_id)
     await callback.answer()
 
 
-@dp.message(AdminEditFormula.waiting_formula_id)
-async def adm_edit_formula_id(message: Message, state: FSMContext) -> None:
+@dp.message(AdminEditFormula.waiting_client_id)
+async def adm_edit_formula_client_id(message: Message, state: FSMContext) -> None:
     if not is_admin(message.from_user.id): return
     try:
-        fid = int(message.text.strip())
+        cid = int(message.text.strip())
     except ValueError:
-        await message.answer("Введите числовой ID формулы.")
+        await message.answer("Введите числовой ID клиента.")
         return
+    client = await db.get_client_by_id(cid)
+    if not client:
+        await message.answer(f"Клиент #{cid} не найден.")
+        return
+    formulas = await db.get_formulas_by_client(cid)
+    if not formulas:
+        await message.answer(
+            f"У клиента <b>{client['name']}</b> (#{cid}) пока нет формул.",
+            reply_markup=kb_admin_menu(), parse_mode="HTML",
+        )
+        await state.clear()
+        return
+    await state.update_data(client_id=cid)
+    text = f"Клиент: <b>{client['name']}</b> ({client['phone']})\n\n<b>Формулы клиента:</b>\n"
+    for f in formulas:
+        text += f"#{f['id']} — {f['title']}\n"
+    text += "\nВыберите формулу для редактирования:"
+    await message.answer(text, reply_markup=kb_formula_select_edit(formulas), parse_mode="HTML")
+    await state.set_state(AdminEditFormula.waiting_formula_id)
+
+
+@dp.callback_query(AdminEditFormula.waiting_formula_id, F.data.startswith("edit_f_"))
+async def adm_edit_formula_select(callback: CallbackQuery, state: FSMContext) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    fid = int(callback.data.split("edit_f_")[1])
     formula = await db.get_formula_by_id(fid)
-    if not formula:
-        await message.answer(f"Формула #{fid} не найдена.")
+    data = await state.get_data()
+    if not formula or formula["client_id"] != data.get("client_id"):
+        await callback.answer("Формула не найдена.", show_alert=True)
         return
-    client = await db.get_client_by_id(formula["client_id"])
-    await state.update_data(formula_id=fid, client_id=formula["client_id"])
-    await message.answer(
-        f"✏️ Формула <b>#{fid}</b> клиента <b>{client['name'] if client else '?'}</b>\n"
+    await state.update_data(formula_id=fid)
+    await callback.message.answer(
+        f"✏️ Формула <b>#{fid}</b>\n"
         f"Название: <i>{formula['title']}</i>\n\n"
         f"<b>Текущий состав:</b>\n<code>{formula['content']}</code>\n\n"
         "Введите <b>новый состав</b> (название формулы не меняется):",
         parse_mode="HTML",
     )
     await state.set_state(AdminEditFormula.waiting_new_content)
+    await callback.answer()
 
 
 @dp.message(AdminEditFormula.waiting_new_content)
@@ -1288,6 +1359,122 @@ async def adm_excel_full(callback: CallbackQuery) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# АДМИН — УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dp.callback_query(F.data == "adm_admins")
+async def adm_admins_list(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+
+    extra_admins = await db.get_extra_admins()
+
+    text = "👤 <b>Администраторы</b>\n\n<b>Из конфигурации (.env):</b>\n"
+    for aid in ADMIN_IDS:
+        text += f"• <code>{aid}</code>\n"
+
+    if extra_admins:
+        text += "\n<b>Добавлены через бота:</b>\n"
+        for a in extra_admins:
+            name = a["name"] or "—"
+            text += f"• <code>{a['telegram_id']}</code> ({name})\n"
+    else:
+        text += "\n<i>Добавленных через бота администраторов пока нет.</i>"
+
+    if not is_super_admin(callback.from_user.id):
+        text += "\n\n<i>Добавлять/удалять администраторов могут только главные администраторы (из .env).</i>"
+        await callback.message.answer(text, reply_markup=kb_admin_back(), parse_mode="HTML")
+    else:
+        await callback.message.answer(text, reply_markup=kb_admins_menu(extra_admins), parse_mode="HTML")
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "adm_admin_add")
+async def adm_admin_add_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not is_super_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    await callback.message.answer(
+        "➕ <b>Добавление администратора</b>\n\n"
+        "Перешлите сообщение от нужного пользователя или введите его <b>Telegram ID</b> "
+        "(числом).\n\n<i>Узнать свой ID можно, например, у бота @userinfobot.</i>",
+        parse_mode="HTML",
+    )
+    await state.set_state(AdminAddAdmin.waiting_id)
+    await callback.answer()
+
+
+@dp.message(AdminAddAdmin.waiting_id)
+async def adm_admin_add_save(message: Message, state: FSMContext) -> None:
+    if not is_super_admin(message.from_user.id):
+        await state.clear()
+        return
+
+    new_id: int | None = None
+    name = ""
+
+    if message.forward_from:
+        new_id = message.forward_from.id
+        name = message.forward_from.full_name
+    else:
+        try:
+            new_id = int(message.text.strip())
+        except (ValueError, AttributeError):
+            await message.answer("Введите числовой Telegram ID или перешлите сообщение от пользователя.")
+            return
+
+    if new_id in ADMIN_IDS or new_id in EXTRA_ADMIN_IDS:
+        await message.answer(
+            f"Пользователь <code>{new_id}</code> уже является администратором.",
+            reply_markup=kb_admin_menu(), parse_mode="HTML",
+        )
+        await state.clear()
+        return
+
+    await db.add_admin(new_id, name, message.from_user.id)
+    EXTRA_ADMIN_IDS.add(new_id)
+    await state.clear()
+
+    await message.answer(
+        f"✅ Пользователь <code>{new_id}</code> добавлен в администраторы.",
+        reply_markup=kb_admin_menu(), parse_mode="HTML",
+    )
+    try:
+        await bot.send_message(
+            new_id,
+            "🔧 Вам выдан доступ администратора в боте LUM'N.\nКоманда: /admin",
+        )
+    except Exception:
+        pass
+    log.info(f"Admin added: {new_id} by {message.from_user.id}")
+
+
+@dp.callback_query(F.data.startswith("adm_admin_del_"))
+async def adm_admin_remove(callback: CallbackQuery) -> None:
+    if not is_super_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    del_id = int(callback.data.split("adm_admin_del_")[1])
+    await db.remove_admin(del_id)
+    EXTRA_ADMIN_IDS.discard(del_id)
+    await callback.answer("Администратор удалён")
+
+    extra_admins = await db.get_extra_admins()
+    text = "👤 <b>Администраторы</b>\n\n<b>Из конфигурации (.env):</b>\n"
+    for aid in ADMIN_IDS:
+        text += f"• <code>{aid}</code>\n"
+    if extra_admins:
+        text += "\n<b>Добавлены через бота:</b>\n"
+        for a in extra_admins:
+            name = a["name"] or "—"
+            text += f"• <code>{a['telegram_id']}</code> ({name})\n"
+    else:
+        text += "\n<i>Добавленных через бота администраторов пока нет.</i>"
+    await callback.message.edit_text(text, reply_markup=kb_admins_menu(extra_admins), parse_mode="HTML")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # АДМИН — ВЕБ-ПАНЕЛЬ
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1310,5 +1497,6 @@ async def adm_webpanel(callback: CallbackQuery) -> None:
 
 async def run_bot() -> None:
     await db.init_db()
+    await load_extra_admins()
     log.info("Bot started")
     await dp.start_polling(bot)

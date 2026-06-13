@@ -87,6 +87,14 @@ async def init_db() -> None:
                 created_at    TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS admins (
+                telegram_id INTEGER PRIMARY KEY,
+                name        TEXT,
+                added_by    INTEGER,
+                created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
+            )
+        """)
         await db.commit()
 
 
@@ -342,3 +350,30 @@ async def save_reorder_request(
         )
         await db.commit()
         return cur.lastrowid
+
+
+# ── Дополнительные администраторы (помимо ADMIN_IDS из .env) ──────────────────
+
+async def get_extra_admins() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM admins ORDER BY created_at"
+        ) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def add_admin(telegram_id: int, name: str, added_by: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO admins (telegram_id, name, added_by) VALUES (?, ?, ?)",
+            (telegram_id, name, added_by),
+        )
+        await db.commit()
+
+
+async def remove_admin(telegram_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM admins WHERE telegram_id = ?", (telegram_id,))
+        await db.commit()

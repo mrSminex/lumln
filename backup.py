@@ -30,18 +30,31 @@ def _make_local_backup() -> Path:
     бот пишет в базу. Возвращает Path к новому файлу.
     """
     backup_dir = Path(BACKUP_DIR)
-    backup_dir.mkdir(exist_ok=True)
+    backup_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = backup_dir / f"lumln_{timestamp}.db"
 
-    src_conn = sqlite3.connect(DB_PATH)
-    dst_conn = sqlite3.connect(str(dest))
+    src_path = Path(DB_PATH).resolve()
+    if not src_path.exists():
+        raise FileNotFoundError(f"Файл БД не найден: {src_path}")
+    if not os.access(src_path, os.R_OK):
+        raise PermissionError(f"Нет прав на чтение файла БД: {src_path}")
+    if not os.access(backup_dir, os.W_OK):
+        raise PermissionError(f"Нет прав на запись в папку бэкапов: {backup_dir.resolve()}")
+
     try:
-        src_conn.backup(dst_conn)
-    finally:
-        src_conn.close()
-        dst_conn.close()
+        src_conn = sqlite3.connect(str(src_path))
+        dst_conn = sqlite3.connect(str(dest))
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            src_conn.close()
+            dst_conn.close()
+    except sqlite3.OperationalError as e:
+        raise sqlite3.OperationalError(
+            f"{e} (src={src_path}, dest={dest.resolve()}, cwd={os.getcwd()})"
+        ) from e
 
     log.info(f"Backup created: {dest} ({dest.stat().st_size // 1024} KB)")
     return dest
