@@ -6,6 +6,7 @@
   - «Формулы»  — все формулы с привязкой к клиенту
 """
 
+import asyncio
 import io
 from datetime import datetime
 
@@ -87,7 +88,7 @@ async def _sheet_clients(wb: openpyxl.Workbook) -> int:
     _header_row(ws, row=3, columns=columns)
     ws.row_dimensions[3].height = 22
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT c.id, c.name, c.phone, c.telegram_id, c.created_at,
@@ -141,7 +142,7 @@ async def _sheet_formulas(wb: openpyxl.Workbook) -> int:
     _header_row(ws, row=3, columns=columns)
     ws.row_dimensions[3].height = 22
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT f.id, f.client_id, f.title, f.content, f.created_at,
@@ -179,14 +180,14 @@ async def build_excel_full() -> tuple[bytes, str]:
     wb = openpyxl.Workbook()
     await _sheet_clients(wb)
     await _sheet_formulas(wb)
-    return _save(wb, "lumln_full")
+    return await _save(wb, "lumln_full")
 
 
 async def build_excel_clients() -> tuple[bytes, str]:
     """Один лист: только Клиенты."""
     wb = openpyxl.Workbook()
     await _sheet_clients(wb)
-    return _save(wb, "lumln_clients")
+    return await _save(wb, "lumln_clients")
 
 
 async def build_excel_formulas() -> tuple[bytes, str]:
@@ -196,12 +197,19 @@ async def build_excel_formulas() -> tuple[bytes, str]:
     wb.active.title = "_tmp"
     await _sheet_formulas(wb)
     del wb["_tmp"]
-    return _save(wb, "lumln_formulas")
+    return await _save(wb, "lumln_formulas")
 
 
-def _save(wb: openpyxl.Workbook, prefix: str) -> tuple[bytes, str]:
+def _save_sync(wb: openpyxl.Workbook, prefix: str) -> tuple[bytes, str]:
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     filename = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return buf.read(), filename
+
+
+async def _save(wb: openpyxl.Workbook, prefix: str) -> tuple[bytes, str]:
+    # openpyxl.save() — синхронная CPU-bound операция, которая может занять
+    # заметное время при большой базе. Выносим в отдельный поток, чтобы не
+    # блокировать event loop бота/веб-панели.
+    return await asyncio.to_thread(_save_sync, wb, prefix)

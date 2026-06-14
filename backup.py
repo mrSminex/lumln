@@ -44,8 +44,8 @@ def _make_local_backup() -> Path:
         raise PermissionError(f"Нет прав на запись в папку бэкапов: {backup_dir.resolve()}")
 
     try:
-        src_conn = sqlite3.connect(str(src_path))
-        dst_conn = sqlite3.connect(str(dest))
+        src_conn = sqlite3.connect(str(src_path), timeout=30)
+        dst_conn = sqlite3.connect(str(dest), timeout=30)
         try:
             src_conn.backup(dst_conn)
         finally:
@@ -116,8 +116,8 @@ async def run_backup(initiated_by: str = "scheduler") -> dict:
     result = {"ok": False, "file": "", "size_kb": 0, "telegram": False, "error": ""}
 
     try:
-        backup_path = _make_local_backup()
-        _rotate_local_backups()
+        backup_path = await asyncio.to_thread(_make_local_backup)
+        await asyncio.to_thread(_rotate_local_backups)
 
         result["file"] = backup_path.name
         result["size_kb"] = backup_path.stat().st_size // 1024

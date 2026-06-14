@@ -4,7 +4,15 @@ from tz_utils import now_msk
 
 
 async def init_db() -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
+        # WAL — читатели больше не блокируют писателей и наоборот.
+        # Без этого при одновременной работе бота, веб-панели и фоновых
+        # задач (рассылки, бэкапы, отложенные сообщения) возможны
+        # ошибки/задержки "database is locked". Настройка journal_mode
+        # сохраняется в самом файле БД, поэтому достаточно выставить её
+        # один раз при старте.
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS clients (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,13 +103,24 @@ async def init_db() -> None:
                 created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
         """)
+
+        # Индексы для часто используемых запросов — ускоряют выборки
+        # по мере роста базы и снижают нагрузку при параллельной работе
+        # бота, веб-панели и фоновых задач.
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_formulas_client_id ON formulas(client_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_scheduled_pending ON scheduled_messages(sent, send_at)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_reviews_client ON review_requests(client_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_reviews_formula ON review_requests(formula_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_reorder_telegram ON reorder_requests(telegram_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_certificate_telegram ON certificate_requests(telegram_id)")
+
         await db.commit()
 
 
 # ─── Клиенты ──────────────────────────────────────────────────────────────────
 
 async def get_client_by_telegram_id(telegram_id: int) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM clients WHERE telegram_id = ?", (telegram_id,)
@@ -111,7 +130,7 @@ async def get_client_by_telegram_id(telegram_id: int) -> dict | None:
 
 
 async def get_client_by_id(client_id: int) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM clients WHERE id = ?", (client_id,)
@@ -121,7 +140,7 @@ async def get_client_by_id(client_id: int) -> dict | None:
 
 
 async def create_client(telegram_id: int, name: str, phone: str) -> dict:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "INSERT INTO clients (telegram_id, name, phone, consent) VALUES (?, ?, ?, 1)",
             (telegram_id, name, phone),
@@ -136,7 +155,7 @@ async def create_client(telegram_id: int, name: str, phone: str) -> dict:
 
 
 async def get_all_clients() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM clients ORDER BY created_at DESC"
@@ -147,7 +166,7 @@ async def get_all_clients() -> list[dict]:
 
 async def search_clients(query: str) -> list[dict]:
     q = f"%{query}%"
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM clients WHERE name LIKE ? OR phone LIKE ? ORDER BY name",
@@ -158,7 +177,7 @@ async def search_clients(query: str) -> list[dict]:
 
 
 async def get_all_telegram_ids() -> list[int]:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         async with db.execute("SELECT telegram_id FROM clients") as cur:
             rows = await cur.fetchall()
             return [r[0] for r in rows]
@@ -167,7 +186,7 @@ async def get_all_telegram_ids() -> list[int]:
 # ─── Формулы ──────────────────────────────────────────────────────────────────
 
 async def get_formulas_by_client(client_id: int) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM formulas WHERE client_id = ? ORDER BY created_at DESC",
@@ -178,7 +197,7 @@ async def get_formulas_by_client(client_id: int) -> list[dict]:
 
 
 async def get_formula_by_id(formula_id: int) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM formulas WHERE id = ?", (formula_id,)
@@ -188,7 +207,7 @@ async def get_formula_by_id(formula_id: int) -> dict | None:
 
 
 async def add_formula(client_id: int, title: str, content: str, created_by: str) -> dict:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "INSERT INTO formulas (client_id, title, content, created_by) VALUES (?, ?, ?, ?)",
             (client_id, title, content, created_by),
@@ -204,7 +223,7 @@ async def add_formula(client_id: int, title: str, content: str, created_by: str)
 
 
 async def update_formula_content(formula_id: int, content: str) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "UPDATE formulas SET content = ? WHERE id = ?", (content, formula_id)
         )
@@ -212,7 +231,7 @@ async def update_formula_content(formula_id: int, content: str) -> None:
 
 
 async def delete_formula(formula_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute("DELETE FROM formulas WHERE id = ?", (formula_id,))
         await db.commit()
 
@@ -220,7 +239,7 @@ async def delete_formula(formula_id: int) -> None:
 # ─── Рассылки ─────────────────────────────────────────────────────────────────
 
 async def save_broadcast(message: str, sent_by: str, recipients: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "INSERT INTO broadcasts (message, sent_by, recipients) VALUES (?, ?, ?)",
             (message, sent_by, recipients),
@@ -229,7 +248,7 @@ async def save_broadcast(message: str, sent_by: str, recipients: int) -> None:
 
 
 async def get_broadcasts() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM broadcasts ORDER BY sent_at DESC LIMIT 20"
@@ -241,7 +260,7 @@ async def get_broadcasts() -> list[dict]:
 # ─── Отложенные сообщения ─────────────────────────────────────────────────────
 
 async def create_scheduled_message(telegram_id: int, message: str, send_at: str) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "INSERT INTO scheduled_messages (telegram_id, message, send_at) VALUES (?, ?, ?)",
             (telegram_id, message, send_at),
@@ -252,7 +271,7 @@ async def create_scheduled_message(telegram_id: int, message: str, send_at: str)
 async def get_pending_scheduled_messages() -> list[dict]:
     """Возвращает сообщения, у которых send_at <= текущего времени и ещё не отправлены."""
     now = now_msk().strftime("%Y-%m-%d %H:%M")
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM scheduled_messages WHERE sent = 0 AND send_at <= ?", (now,)
@@ -262,7 +281,7 @@ async def get_pending_scheduled_messages() -> list[dict]:
 
 
 async def mark_scheduled_sent(msg_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "UPDATE scheduled_messages SET sent = 1 WHERE id = ?", (msg_id,)
         )
@@ -271,7 +290,7 @@ async def mark_scheduled_sent(msg_id: int) -> None:
 
 async def get_scheduled_messages_pending_list() -> list[dict]:
     """Список запланированных (не отправленных) для отображения в боте."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM scheduled_messages WHERE sent = 0 ORDER BY send_at"
@@ -286,7 +305,7 @@ async def get_formulas_needing_review() -> list[dict]:
     """
     Формулы, добавленные 23–25 часов назад, по которым ещё не отправлялся запрос отзыва.
     """
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT f.*
@@ -303,7 +322,7 @@ async def get_formulas_needing_review() -> list[dict]:
 
 
 async def create_review_request(client_id: int, formula_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "INSERT OR IGNORE INTO review_requests (client_id, formula_id) VALUES (?, ?)",
             (client_id, formula_id),
@@ -314,7 +333,7 @@ async def create_review_request(client_id: int, formula_id: int) -> None:
 async def save_review(
     client_id: int, formula_id: int, q1: int, q2: int | None, feedback: str | None
 ) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "INSERT INTO reviews (client_id, formula_id, q1_score, q2_score, feedback) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -328,7 +347,7 @@ async def save_review(
 async def save_certificate_request(
     telegram_id: int, client_name: str, cert_type: str, persons: int, tariff: str
 ) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         cur = await db.execute(
             "INSERT INTO certificate_requests (telegram_id, client_name, cert_type, persons, tariff) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -342,7 +361,7 @@ async def save_reorder_request(
     telegram_id: int, client_name: str,
     formula_id: int | None, formula_title: str, volume: int
 ) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         cur = await db.execute(
             "INSERT INTO reorder_requests (telegram_id, client_name, formula_id, formula_title, volume) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -355,7 +374,7 @@ async def save_reorder_request(
 # ── Дополнительные администраторы (помимо ADMIN_IDS из .env) ──────────────────
 
 async def get_extra_admins() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM admins ORDER BY created_at"
@@ -365,7 +384,7 @@ async def get_extra_admins() -> list[dict]:
 
 
 async def add_admin(telegram_id: int, name: str, added_by: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "INSERT OR IGNORE INTO admins (telegram_id, name, added_by) VALUES (?, ?, ?)",
             (telegram_id, name, added_by),
@@ -374,6 +393,6 @@ async def add_admin(telegram_id: int, name: str, added_by: int) -> None:
 
 
 async def remove_admin(telegram_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute("DELETE FROM admins WHERE telegram_id = ?", (telegram_id,))
         await db.commit()

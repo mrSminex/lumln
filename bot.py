@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -1010,12 +1011,17 @@ async def bcast_send_all(callback: CallbackQuery, state: FSMContext) -> None:
     ids = await db.get_all_telegram_ids()
     sent = 0
     for tid in ids:
-        try:
-            await bot.send_message(tid, text, parse_mode="HTML")
-            sent += 1
-            await asyncio.sleep(0.05)
-        except Exception:
-            pass
+        for attempt in range(2):
+            try:
+                await bot.send_message(tid, text, parse_mode="HTML")
+                sent += 1
+                break
+            except TelegramRetryAfter as e:
+                # Telegram попросил подождать — ждём и пробуем ещё раз
+                await asyncio.sleep(e.retry_after + 0.5)
+            except Exception:
+                break
+        await asyncio.sleep(0.05)
     await db.save_broadcast(text, callback.from_user.full_name, sent)
     await callback.message.edit_text(
         f"✅ Рассылка отправлена: {sent}/{len(ids)} клиентов",

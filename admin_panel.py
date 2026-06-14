@@ -49,7 +49,7 @@ async def logout():
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async def _stats():
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         async with db.execute("SELECT COUNT(*) FROM clients")   as c: clients   = (await c.fetchone())[0]
         async with db.execute("SELECT COUNT(*) FROM formulas")  as c: formulas  = (await c.fetchone())[0]
         async with db.execute("SELECT COUNT(*) FROM broadcasts") as c: broadcasts = (await c.fetchone())[0]
@@ -57,7 +57,7 @@ async def _stats():
 
 
 async def _all_clients_with_counts():
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT c.*, COUNT(f.id) AS formula_count
@@ -71,7 +71,7 @@ async def _all_clients_with_counts():
 
 async def _search_clients(q: str):
     like = f"%{q}%"
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT c.*, COUNT(f.id) AS formula_count
@@ -84,7 +84,7 @@ async def _search_clients(q: str):
 
 
 async def _client(client_id: int):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM clients WHERE id = ?", (client_id,)) as cur:
             row = await cur.fetchone()
@@ -92,7 +92,7 @@ async def _client(client_id: int):
 
 
 async def _formulas(client_id: int):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM formulas WHERE client_id = ? ORDER BY created_at DESC", (client_id,)
@@ -101,7 +101,7 @@ async def _formulas(client_id: int):
 
 
 async def _all_formulas():
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT f.*, c.name AS client_name
@@ -157,7 +157,7 @@ async def add_formula(request: Request, client_id: int,
                       title: str = Form(...), content: str = Form(...)):
     if not is_auth(request):
         return redirect_login()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "INSERT INTO formulas (client_id, title, content, created_by) VALUES (?, ?, ?, ?)",
             (client_id, title, content, "Веб-панель"),
@@ -187,7 +187,7 @@ async def edit_formula_page(request: Request, formula_id: int):
     if not is_auth(request):
         return redirect_login()
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             """SELECT f.*, c.name as client_name 
@@ -215,7 +215,7 @@ async def edit_formula_save(request: Request, formula_id: int,
     if not is_auth(request):
         return redirect_login()
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         async with db.execute(
             "SELECT client_id FROM formulas WHERE id = ?", (formula_id,)
         ) as cur:
@@ -232,7 +232,7 @@ async def edit_formula_save(request: Request, formula_id: int,
 
     client = await _client(client_id)
     if client:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=30) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT title FROM formulas WHERE id = ?", (formula_id,)) as cur:
                 formula = dict(await cur.fetchone())
@@ -254,7 +254,7 @@ async def edit_formula_save(request: Request, formula_id: int,
 async def delete_formula(request: Request, formula_id: int):
     if not is_auth(request):
         return redirect_login()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         async with db.execute(
             "SELECT client_id FROM formulas WHERE id = ?", (formula_id,)
         ) as cur:
@@ -279,7 +279,7 @@ async def formulas_page(request: Request):
 async def broadcast_page(request: Request, msg: str = "", error: str = ""):
     if not is_auth(request):
         return redirect_login()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT COUNT(*) FROM clients") as c:
             client_count = (await c.fetchone())[0]
@@ -299,7 +299,7 @@ async def broadcast_send(request: Request, message: str = Form(...)):
     if not is_auth(request):
         return redirect_login()
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         async with db.execute("SELECT telegram_id FROM clients") as cur:
             ids = [r[0] for r in await cur.fetchall()]
 
@@ -316,7 +316,7 @@ async def broadcast_send(request: Request, message: str = Form(...)):
     except Exception as e:
         return RedirectResponse(f"/broadcast?error=Ошибка+бота:+{str(e)[:50]}", status_code=302)
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute(
             "INSERT INTO broadcasts (message, sent_by, recipients) VALUES (?, ?, ?)",
             (message, "Веб-панель", sent),
@@ -366,7 +366,7 @@ async def individual_message_send(request: Request, client_id: int = Form(...),
 async def scheduled_page(request: Request, msg: str = ""):
     if not is_auth(request):
         return redirect_login()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM scheduled_messages WHERE sent = 0 ORDER BY send_at DESC"
@@ -398,7 +398,7 @@ async def scheduled_create(request: Request, target: str = Form(...),
             status_code=302,
         )
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         if target == "all":
             ids = await _get_all_telegram_ids()
         else:
@@ -421,7 +421,7 @@ async def scheduled_create(request: Request, target: str = Form(...),
 async def scheduled_delete(request: Request, msg_id: int):
     if not is_auth(request):
         return redirect_login()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.execute("DELETE FROM scheduled_messages WHERE id = ?", (msg_id,))
         await db.commit()
     return RedirectResponse("/scheduled?msg=Сообщение+удалено", status_code=302)
@@ -431,7 +431,7 @@ async def scheduled_delete(request: Request, msg_id: int):
 async def certificates_page(request: Request):
     if not is_auth(request):
         return redirect_login()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM certificate_requests ORDER BY created_at DESC"
@@ -446,7 +446,7 @@ async def certificates_page(request: Request):
 async def reorders_page(request: Request):
     if not is_auth(request):
         return redirect_login()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM reorder_requests ORDER BY created_at DESC"
@@ -461,7 +461,7 @@ async def reorders_page(request: Request):
 async def reviews_page(request: Request):
     if not is_auth(request):
         return redirect_login()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT r.*, c.name as client_name, f.title as formula_title "
@@ -477,7 +477,7 @@ async def reviews_page(request: Request):
 
 
 async def _get_all_telegram_ids():
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         async with db.execute("SELECT telegram_id FROM clients") as cur:
             return [r[0] for r in await cur.fetchall()]
 
