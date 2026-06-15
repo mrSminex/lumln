@@ -11,7 +11,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     Message, CallbackQuery,
     InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton,
+    ReplyKeyboardRemove,
 )
 
 import database as db
@@ -95,6 +95,7 @@ def kb_main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🎁 Сертификат в подарок", callback_data="certificate")],
         [InlineKeyboardButton(text="📅 Записаться",            url=YCLIENTS_URL)],
         [InlineKeyboardButton(text="📞 Связаться с нами",      callback_data="contacts")],
+        [InlineKeyboardButton(text="⚙️ Настройки",             callback_data="settings")],
     ])
 
 def kb_consent() -> InlineKeyboardMarkup:
@@ -103,15 +104,30 @@ def kb_consent() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❌ Отказываюсь", callback_data="consent_no"),
     ]])
 
-def kb_phone() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📱 Отправить мой номер", request_contact=True)]],
-        resize_keyboard=True, one_time_keyboard=True,
-    )
-
 def kb_back_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="← Главное меню", callback_data="main_menu")]
+    ])
+
+def kb_settings(unsubscribed: bool) -> InlineKeyboardMarkup:
+    unsub_text = "🔔 Подписаться на рассылки" if unsubscribed else "🔕 Отписаться от рассылок"
+    unsub_data = "unsub_subscribe" if unsubscribed else "unsub_unsubscribe"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=unsub_text,            callback_data=unsub_data)],
+        [InlineKeyboardButton(text="🗑 Удалить мои данные", callback_data="delete_data_ask")],
+        [InlineKeyboardButton(text="← Назад",              callback_data="main_menu")],
+    ])
+
+def kb_delete_confirm() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, удалить",  callback_data="delete_data_confirm")],
+        [InlineKeyboardButton(text="❌ Отмена",        callback_data="settings")],
+    ])
+
+def kb_admin_delete_confirm(telegram_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить удаление", callback_data=f"adm_delete_confirm_{telegram_id}")],
+        [InlineKeyboardButton(text="❌ Отклонить",             callback_data=f"adm_delete_reject_{telegram_id}")],
     ])
 
 # ── Сертификат ────────────────────────────────────────────────────────────────
@@ -327,17 +343,10 @@ async def reg_name(message: Message, state: FSMContext) -> None:
     await state.update_data(name=name)
     await message.answer(
         f"Приятно познакомиться, <b>{name}</b>! 🌸\n\n"
-        "Укажите ваш номер телефона. Нажмите кнопку ниже или напишите вручную: <code>+79001234567</code>",
-        reply_markup=kb_phone(), parse_mode="HTML",
+        "Укажите ваш номер телефона в формате: <code>+79001234567</code>",
+        reply_markup=ReplyKeyboardRemove(), parse_mode="HTML",
     )
     await state.set_state(Registration.waiting_phone)
-
-
-@dp.message(Registration.waiting_phone, F.contact)
-async def reg_phone_contact(message: Message, state: FSMContext) -> None:
-    phone = message.contact.phone_number
-    if not phone.startswith("+"): phone = "+" + phone
-    await _ask_consent(message, state, phone)
 
 
 @dp.message(Registration.waiting_phone, F.text)
@@ -1008,7 +1017,7 @@ async def bcast_send_all(callback: CallbackQuery, state: FSMContext) -> None:
     text = data.get("message", "")
     await state.clear()
     await callback.message.edit_text("⏳ Отправляю рассылку...")
-    ids = await db.get_all_telegram_ids()
+    ids = await db.get_all_telegram_ids(marketing=True)
     sent = 0
     for tid in ids:
         for attempt in range(2):
@@ -1235,7 +1244,7 @@ async def adm_schedule_confirm(callback: CallbackQuery, state: FSMContext) -> No
     send_at = data["send_at"]
 
     if target == "all":
-        ids = await db.get_all_telegram_ids()
+        ids = await db.get_all_telegram_ids(marketing=True)
     else:
         client = await db.get_client_by_id(int(target))
         ids = [client["telegram_id"]] if client else []
@@ -1478,6 +1487,164 @@ async def adm_admin_remove(callback: CallbackQuery) -> None:
     else:
         text += "\n<i>Добавленных через бота администраторов пока нет.</i>"
     await callback.message.edit_text(text, reply_markup=kb_admins_menu(extra_admins), parse_mode="HTML")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# КЛИЕНТ — НАСТРОЙКИ / ОТПИСКА / УДАЛЕНИЕ ДАННЫХ
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dp.callback_query(F.data == "settings")
+async def settings_page(callback: CallbackQuery) -> None:
+    client = await db.get_client_by_telegram_id(callback.from_user.id)
+    if not client:
+        await callback.answer("Сначала нужно зарегистрироваться. Напишите /start", show_alert=True)
+        return
+    unsub = bool(client.get("unsubscribed", 0))
+    status = "🔕 Вы отписаны от маркетинговых рассылок." if unsub else "🔔 Вы подписаны на рассылки."
+    await callback.message.edit_text(
+        f"⚙️ <b>Настройки</b>\n\n{status}\n\n"
+        "<i>Сервисные уведомления (готовность формулы, ответы на заявки) приходят всегда.</i>",
+        reply_markup=kb_settings(unsub), parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "unsub_unsubscribe")
+async def unsub_do(callback: CallbackQuery) -> None:
+    client = await db.get_client_by_telegram_id(callback.from_user.id)
+    if not client:
+        await callback.answer("Вы не зарегистрированы.", show_alert=True)
+        return
+    await db.set_unsubscribed(callback.from_user.id, True)
+    await callback.message.edit_text(
+        "🔕 <b>Вы отписаны от маркетинговых рассылок.</b>\n\n"
+        "Сервисные уведомления (готовность формулы, ответы на заявки) будут приходить по-прежнему.\n\n"
+        "Вы всегда можете подписаться снова в разделе <b>Настройки</b>.",
+        reply_markup=kb_settings(True), parse_mode="HTML",
+    )
+    await callback.answer("Вы отписались от рассылок")
+    log.info(f"Unsubscribed: tg_id={callback.from_user.id}")
+
+
+@dp.callback_query(F.data == "unsub_subscribe")
+async def unsub_resubscribe(callback: CallbackQuery) -> None:
+    client = await db.get_client_by_telegram_id(callback.from_user.id)
+    if not client:
+        await callback.answer("Вы не зарегистрированы.", show_alert=True)
+        return
+    await db.set_unsubscribed(callback.from_user.id, False)
+    await callback.message.edit_text(
+        "🔔 <b>Вы снова подписаны на рассылки.</b>\n\n"
+        "Теперь вы будете получать новости и специальные предложения от LUM'N.",
+        reply_markup=kb_settings(False), parse_mode="HTML",
+    )
+    await callback.answer("Вы подписались на рассылки")
+    log.info(f"Resubscribed: tg_id={callback.from_user.id}")
+
+
+@dp.callback_query(F.data == "delete_data_ask")
+async def delete_data_ask(callback: CallbackQuery) -> None:
+    client = await db.get_client_by_telegram_id(callback.from_user.id)
+    if not client:
+        await callback.answer("Вы не зарегистрированы.", show_alert=True)
+        return
+    await callback.message.edit_text(
+        "🗑 <b>Удаление данных</b>\n\n"
+        "Вы запрашиваете удаление вашей карточки клиента, включая:\n"
+        "• имя и номер телефона\n"
+        "• все ваши персональные формулы\n"
+        "• историю заявок\n\n"
+        "Запрос будет отправлен администратору. После подтверждения все данные будут безвозвратно удалены.\n\n"
+        "<b>Вы уверены?</b>",
+        reply_markup=kb_delete_confirm(), parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "delete_data_confirm")
+async def delete_data_confirm(callback: CallbackQuery) -> None:
+    client = await db.get_client_by_telegram_id(callback.from_user.id)
+    if not client:
+        await callback.answer("Вы не зарегистрированы.", show_alert=True)
+        return
+    await db.set_delete_requested(callback.from_user.id, True)
+
+    # Уведомляем всех главных администраторов
+    for admin_id in list(ADMIN_IDS) + list(EXTRA_ADMIN_IDS):
+        try:
+            await bot.send_message(
+                admin_id,
+                f"🗑 <b>Запрос на удаление данных</b>\n\n"
+                f"Клиент <b>{client['name']}</b> (#{client['id']}) запросил удаление своей карточки.\n"
+                f"📱 Телефон: {client['phone']}\n"
+                f"🆔 Telegram: <code>{callback.from_user.id}</code>",
+                reply_markup=kb_admin_delete_confirm(callback.from_user.id),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    await callback.message.edit_text(
+        "✅ <b>Запрос отправлен</b>\n\n"
+        "Ваш запрос на удаление данных передан администратору. "
+        "После подтверждения все ваши данные будут удалены.",
+        reply_markup=kb_back_main(), parse_mode="HTML",
+    )
+    await callback.answer()
+    log.info(f"Delete requested: tg_id={callback.from_user.id} client_id={client['id']}")
+
+
+@dp.callback_query(F.data.startswith("adm_delete_confirm_"))
+async def adm_delete_confirm(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    tg_id = int(callback.data.split("adm_delete_confirm_")[1])
+    client = await db.get_client_by_telegram_id(tg_id)
+    if not client:
+        await callback.message.edit_text("Клиент уже удалён или не найден.")
+        await callback.answer()
+        return
+    name, cid = client["name"], client["id"]
+    await db.delete_client_by_telegram_id(tg_id)
+    await callback.message.edit_text(
+        f"✅ Данные клиента <b>{name}</b> (#{cid}) удалены.",
+        parse_mode="HTML",
+    )
+    await callback.answer("Данные удалены")
+    log.info(f"Client deleted by admin: tg_id={tg_id} client_id={cid} by={callback.from_user.id}")
+    try:
+        await bot.send_message(
+            tg_id,
+            "🗑 Ваши данные удалены из системы LUM'N по вашему запросу.\n\n"
+            "Если вы захотите снова воспользоваться нашими услугами — напишите /start.",
+        )
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data.startswith("adm_delete_reject_"))
+async def adm_delete_reject(callback: CallbackQuery) -> None:
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Доступ запрещён", show_alert=True)
+        return
+    tg_id = int(callback.data.split("adm_delete_reject_")[1])
+    await db.set_delete_requested(tg_id, False)
+    client = await db.get_client_by_telegram_id(tg_id)
+    name = client["name"] if client else str(tg_id)
+    await callback.message.edit_text(
+        f"❌ Запрос на удаление данных клиента <b>{name}</b> отклонён.",
+        parse_mode="HTML",
+    )
+    await callback.answer("Запрос отклонён")
+    try:
+        await bot.send_message(
+            tg_id,
+            "❌ Ваш запрос на удаление данных был отклонён администратором.\n\n"
+            "Если у вас есть вопросы — напишите нам.",
+        )
+    except Exception:
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════

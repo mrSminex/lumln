@@ -15,14 +15,22 @@ async def init_db() -> None:
         await db.execute("PRAGMA synchronous=NORMAL")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS clients (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id INTEGER UNIQUE NOT NULL,
-                name        TEXT    NOT NULL,
-                phone       TEXT    NOT NULL,
-                consent     INTEGER NOT NULL DEFAULT 0,
-                created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_id      INTEGER UNIQUE NOT NULL,
+                name             TEXT    NOT NULL,
+                phone            TEXT    NOT NULL,
+                consent          INTEGER NOT NULL DEFAULT 0,
+                unsubscribed     INTEGER NOT NULL DEFAULT 0,
+                delete_requested INTEGER NOT NULL DEFAULT 0,
+                created_at       TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
         """)
+        # Миграция: добавить колонки если базы старые (без них)
+        for col, dflt in [("unsubscribed", "0"), ("delete_requested", "0")]:
+            try:
+                await db.execute(f"ALTER TABLE clients ADD COLUMN {col} INTEGER NOT NULL DEFAULT {dflt}")
+            except Exception:
+                pass  # колонка уже есть
         await db.execute("""
             CREATE TABLE IF NOT EXISTS formulas (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -176,11 +184,55 @@ async def search_clients(query: str) -> list[dict]:
             return [dict(r) for r in rows]
 
 
-async def get_all_telegram_ids() -> list[int]:
+async def get_all_telegram_ids(marketing: bool = True) -> list[int]:
+    """
+    marketing=True  → только подписанные (для массовых рассылок)
+    marketing=False → все (для сервисных уведомлений: формула готова, ответ на заявку)
+    """
     async with aiosqlite.connect(DB_PATH, timeout=30) as db:
-        async with db.execute("SELECT telegram_id FROM clients") as cur:
-            rows = await cur.fetchall()
-            return [r[0] for r in rows]
+        if marketing:
+            async with db.execute(
+                "SELECT telegram_id FROM clients WHERE unsubscribed = 0"
+            ) as cur:
+                rows = await cur.fetchall()
+        else:
+            async with db.execute("SELECT telegram_id FROM clients") as cur:
+                rows = await cur.fetchall()
+        return [r[0] for r in rows]
+
+
+async def set_unsubscribed(telegram_id: int, value: bool) -> None:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
+        await db.execute(
+            "UPDATE clients SET unsubscribed = ? WHERE telegram_id = ?",
+            (1 if value else 0, telegram_id),
+        )
+        await db.commit()
+
+
+async def set_delete_requested(telegram_id: int, value: bool) -> None:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
+        await db.execute(
+            "UPDATE clients SET delete_requested = ? WHERE telegram_id = ?",
+            (1 if value else 0, telegram_id),
+        )
+        await db.commit()
+
+
+async def delete_client_by_telegram_id(telegram_id: int) -> None:
+    """Полное удаление клиента и всех его данных (формулы удаляются каскадно)."""
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
+        async with db.execute(
+            "SELECT id FROM clients WHERE telegram_id = ?", (telegram_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        if row:
+            client_id = row[0]
+            await db.execute("DELETE FROM formulas WHERE client_id = ?", (client_id,))
+            await db.execute("DELETE FROM review_requests WHERE client_id = ?", (client_id,))
+            await db.execute("DELETE FROM scheduled_messages WHERE telegram_id = ?", (telegram_id,))
+            await db.execute("DELETE FROM clients WHERE id = ?", (client_id,))
+            await db.commit()
 
 
 # ─── Формулы ──────────────────────────────────────────────────────────────────
