@@ -355,31 +355,48 @@ async def get_scheduled_messages_pending_list() -> list[dict]:
 
 async def get_formulas_needing_review() -> list[dict]:
     """
-    Формулы, добавленные 23–25 часов назад, по которым ещё не отправлялся запрос отзыва.
+    По одной (самой первой подходящей) формуле на клиента, добавленной
+    23–25 часов назад, у которого ЕЩЁ НИКОГДА не запрашивали отзыв —
+    ни автоматически, ни вручную через кнопку «Оставить отзыв».
     """
     async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT f.*
             FROM formulas f
-            LEFT JOIN review_requests rr
-                ON rr.formula_id = f.id AND rr.client_id = f.client_id
-            WHERE rr.id IS NULL
-              AND f.created_at BETWEEN
+            WHERE f.created_at BETWEEN
                   datetime('now', 'localtime', '-25 hours') AND
                   datetime('now', 'localtime', '-23 hours')
+              AND NOT EXISTS (
+                  SELECT 1 FROM review_requests rr WHERE rr.client_id = f.client_id
+              )
+            GROUP BY f.client_id
+            HAVING f.id = MIN(f.id)
         """) as cur:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 
 
-async def create_review_request(client_id: int, formula_id: int) -> None:
+async def create_review_request(client_id: int, formula_id: int) -> bool:
+    """Возвращает True, если запрос создан впервые; False, если уже был (UNIQUE-конфликт)."""
     async with aiosqlite.connect(DB_PATH, timeout=30) as db:
-        await db.execute(
+        cur = await db.execute(
             "INSERT OR IGNORE INTO review_requests (client_id, formula_id) VALUES (?, ?)",
             (client_id, formula_id),
         )
         await db.commit()
+        return cur.rowcount > 0
+
+
+async def get_latest_formula_for_client(client_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH, timeout=30) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM formulas WHERE client_id = ? ORDER BY created_at DESC LIMIT 1",
+            (client_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
 
 
 async def save_review(
