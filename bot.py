@@ -1,4 +1,5 @@
 import asyncio
+import io
 import logging
 from datetime import datetime
 
@@ -17,6 +18,7 @@ from aiogram.types import (
 import database as db
 from config import BOT_TOKEN, ADMIN_IDS, YCLIENTS_URL, PRIVACY_URL, OFFER_URL, PROXY
 from tz_utils import now_msk
+from file_extract import extract_text, FileExtractionError, MAX_FILE_SIZE
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -302,6 +304,40 @@ def is_admin(user_id: int) -> bool:
 def is_super_admin(user_id: int) -> bool:
     """Только админы из .env (ADMIN_IDS) могут управлять списком администраторов."""
     return user_id in ADMIN_IDS
+
+
+async def get_text_from_message(message: Message) -> tuple[str | None, str | None]:
+    """
+    Возвращает (текст, ошибка). Если в сообщении документ — скачивает его
+    и извлекает текст (.txt/.docx/.pdf). Если обычный текст — возвращает его.
+    Если ни того ни другого, или файл не получилось обработать — (None, сообщение_об_ошибке).
+    """
+    if message.document:
+        doc = message.document
+        if doc.file_size and doc.file_size > MAX_FILE_SIZE:
+            return None, "Файл слишком большой (максимум 5 МБ). Пришлите файл поменьше или текст вручную."
+        try:
+            file = await bot.get_file(doc.file_id)
+            buf = io.BytesIO()
+            await bot.download_file(file.file_path, destination=buf)
+            file_bytes = buf.getvalue()
+        except Exception:
+            return None, "Не удалось скачать файл. Попробуйте ещё раз или пришлите текст вручную."
+        try:
+            text = extract_text(file_bytes, doc.file_name or "")
+        except FileExtractionError as e:
+            return None, str(e)
+        return text, None
+
+    if message.text:
+        text = message.text.strip()
+        if not text:
+            return None, "Сообщение пустое. Введите состав формулы текстом или пришлите файл."
+        return text, None
+
+    return None, "Пришлите состав формулы текстом, либо файлом (.txt, .docx, .pdf)."
+
+
 
 TARIFF_NAMES = {
     "standard":   "Стандартная сессия",
@@ -846,20 +882,27 @@ async def adm_formula_title(message: Message, state: FSMContext) -> None:
     if not is_admin(message.from_user.id): return
     await state.update_data(title=message.text.strip())
     await message.answer(
-        "Введите <b>состав формулы</b>:\n\n"
-        "<code>Бергамот — 30%\nЖасмин — 25%\nСандал — 20%\nМускус — 15%\nВаниль — 10%</code>",
+        "Введите <b>состав формулы</b> текстом:\n\n"
+        "<code>Бергамот — 30%\nЖасмин — 25%\nСандал — 20%\nМускус — 15%\nВаниль — 10%</code>\n\n"
+        "Либо пришлите файл с составом — <b>.txt, .docx или .pdf</b>.",
         parse_mode="HTML",
     )
     await state.set_state(AdminAddFormula.waiting_content)
 
 
-@dp.message(AdminAddFormula.waiting_content)
+@dp.message(AdminAddFormula.waiting_content, F.text | F.document)
 async def adm_formula_content(message: Message, state: FSMContext) -> None:
     if not is_admin(message.from_user.id): return
+
+    content, error = await get_text_from_message(message)
+    if error:
+        await message.answer(f"⚠️ {error}")
+        return
+
     data = await state.get_data()
     formula = await db.add_formula(
         client_id=data["client_id"], title=data["title"],
-        content=message.text.strip(), created_by=message.from_user.full_name,
+        content=content, created_by=message.from_user.full_name,
     )
     await state.clear()
     client = await db.get_client_by_id(data["client_id"])
@@ -941,19 +984,26 @@ async def adm_edit_formula_select(callback: CallbackQuery, state: FSMContext) ->
         f"✏️ Формула <b>#{fid}</b>\n"
         f"Название: <i>{formula['title']}</i>\n\n"
         f"<b>Текущий состав:</b>\n<code>{formula['content']}</code>\n\n"
-        "Введите <b>новый состав</b> (название формулы не меняется):",
+        "Введите <b>новый состав</b> текстом (название формулы не меняется), "
+        "либо пришлите файл — <b>.txt, .docx или .pdf</b>.",
         parse_mode="HTML",
     )
     await state.set_state(AdminEditFormula.waiting_new_content)
     await callback.answer()
 
 
-@dp.message(AdminEditFormula.waiting_new_content)
+@dp.message(AdminEditFormula.waiting_new_content, F.text | F.document)
 async def adm_edit_formula_save(message: Message, state: FSMContext) -> None:
     if not is_admin(message.from_user.id): return
+
+    content, error = await get_text_from_message(message)
+    if error:
+        await message.answer(f"⚠️ {error}")
+        return
+
     data = await state.get_data()
     await state.clear()
-    await db.update_formula_content(data["formula_id"], message.text.strip())
+    await db.update_formula_content(data["formula_id"], content)
 
     client = await db.get_client_by_id(data["client_id"])
     formula = await db.get_formula_by_id(data["formula_id"])
