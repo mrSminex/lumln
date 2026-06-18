@@ -96,6 +96,7 @@ def kb_main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔁 Повторить мой парфюм", callback_data="reorder")],
         [InlineKeyboardButton(text="🎁 Сертификат в подарок", callback_data="certificate")],
         [InlineKeyboardButton(text="📅 Записаться",            url=YCLIENTS_URL)],
+        [InlineKeyboardButton(text="⭐ Оставить отзыв",        callback_data="leave_review")],
         [InlineKeyboardButton(text="📞 Связаться с нами",      callback_data="contacts")],
         [InlineKeyboardButton(text="⚙️ Настройки",             callback_data="settings")],
     ])
@@ -689,6 +690,38 @@ async def reorder_volume(callback: CallbackQuery, state: FSMContext) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 # ОТЗЫВЫ (ответы клиента на запрос, инициируемый фоновой задачей)
 # ══════════════════════════════════════════════════════════════════════════════
+
+@dp.callback_query(F.data == "leave_review")
+async def leave_review_start(callback: CallbackQuery) -> None:
+    client = await db.get_client_by_telegram_id(callback.from_user.id)
+    if not client:
+        await callback.answer("Сначала нужно зарегистрироваться. Напишите /start", show_alert=True)
+        return
+
+    formula = await db.get_latest_formula_for_client(client["id"])
+    if not formula:
+        await callback.message.edit_text(
+            "🌸 Пока у вас нет сохранённых формул — отзыв можно оставить после первой сессии.",
+            reply_markup=kb_back_main(), parse_mode="HTML",
+        )
+        await callback.answer()
+        return
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=str(i), callback_data=f"rev_q1_{formula['id']}_{i}")
+        for i in range(1, 6)
+    ]])
+    await callback.message.edit_text(
+        f"🌸 <b>Спасибо, что хотите оставить отзыв!</b>\n\n"
+        "<b>Вопрос 1:</b> Как прошла сессия и в целом как вам такой опыт?\n"
+        "Оцените от 1 до 5 👇",
+        reply_markup=kb, parse_mode="HTML",
+    )
+    await callback.answer()
+    # Помечаем, что запрос отзыва клиенту "выдан" — чтобы фоновая задача
+    # больше не присылала его автоматически, если клиент сам инициировал отзыв раньше.
+    await db.create_review_request(client["id"], formula["id"])
+
 
 @dp.callback_query(F.data.regexp(r"^rev_q1_\d+_\d+$"))
 async def review_q1(callback: CallbackQuery, state: FSMContext) -> None:
